@@ -5,17 +5,22 @@ version = "0.1.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MarkovGames = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
 POSGModels = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 ProtoStructs = "437b6fc4-8e8e-11e9-3fa1-ad391e66c018"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 TensorGames = "dad72d94-522a-402a-84d3-a630e8ffd4d6"
 
 [compat]
 CUDA = "5.6.1"
+Distributions = "0.25.117"
 Flux = "0.16.3"
-MarkovGames = "0.1.0"
+LinearAlgebra = "1.11.0"
 ProgressMeter = "1.10.2"
 ProtoStructs = "1.2.1"
+Random = "1.11.0"
 TensorGames = "0.3.9"

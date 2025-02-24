@@ -1,4 +1,6 @@
 function solve(A::AbstractMatrix)
     eq = compute_equilibrium([A, -A])
-    return eq.x[1], eq.x[2]
+    x,y = normalize!(eq.x[1],1), normalize!(eq.x[2],1)
+    t = dot(x, A, y)
+    return x,y,t
 end
