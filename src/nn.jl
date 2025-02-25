@@ -168,33 +168,6 @@ function getloss(critic::Critic, input; value_target)
     return loss, mse
 end
 
-twohot(x, labels::CuVector; kwargs...) = cu(twohot(Array(x), Array(labels); kwargs...))
-function twohot(x, labels::Vector; kwargs...)
-    @assert ndims(x) == 2 "error: ndims=$(ndims(x)), type = $(typeof(x))"
-    @assert size(x,1) == 1 || size(x,2) == 1 "x must be a row or column vector"
-    twohot(vec(x), labels)
-end
-function twohot(x::Union{Real,AbstractVector}, labels::Vector; clamping=true)
-    # returns sparse n_labels x n_x
-    @assert clamping "Clamping turned off is a future feature lol"
-    # @assert issorted(labels) "Labels must be sorted"
-
-    x = clamping ? clamp.(x, labels[1], labels[end]) : x
-    ub_i = map(y->searchsortedfirst(labels, y), x)
-    clamp!(ub_i, 2, length(labels)) # each entry will have a distinct ub and a lb
-    lb_i = ub_i .- 1
-    ub = labels[ub_i]
-    lb = labels[lb_i]
-    a = (x .- lb) ./ (ub .- lb) # x = (1-a)*lb + a*ub
-    rows = [lb_i'; ub_i']
-    vals = [1 .- a'; a']
-    cols = [(1:length(x))'; (1:length(x))']
-    sparse(vec(rows), vec(cols), vec(vals), length(labels), length(x))
-end
-
-"""
-    mlp
-"""
 function mlp(;
     dims,
     act_fun = tanh,

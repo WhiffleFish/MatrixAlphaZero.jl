@@ -1,6 +1,7 @@
-@kwdef struct MCTSParams{Oracle}
+@proto @kwdef struct MCTSParams{Oracle}
     tree_queries    :: Int      = 10
     c               :: Float64  = 1.0
+    max_depth       :: Int      = 100
     oracle          :: Oracle
 end
 
@@ -54,8 +55,45 @@ end
 
 function explore_action(tree, c, s_idx, γ)
     x,y,t = solve(ucb_matrix_game(tree, c, s_idx, γ))
+    return action_idx_from_probs(x,y)
+end
+
+function action_idx_from_probs(x,y)
     return CartesianIndex(
         rand(Categorical(x)), 
         rand(Categorical(y))
     )
+end
+
+# TODO: change name
+function mcts_sim(params::MCTSParams, game::MG, s; progress=false)
+    d = params.max_depth
+    A1, A2 = actions(game)
+    γ = discount(game)
+    t = 1
+    v = 0.0
+    r_hist = Float64[]
+    v_hist = Float64[0.0]
+    s_hist = [s]
+    p = Progress(d, enabled=progress)
+
+    while (t < d) && !isterminal(game, s)
+        x,y,v = search(params, game, s)
+        a_idxs = Tuple(action_idx_from_probs(x,y))
+        a = (A1[a_idxs[1]], A2[a_idxs[2]])
+        sp, r = @gen(:sp, :r)(game, s, a)
+
+        v += r * γ^t
+        push!(r_hist, r)
+        push!(s_hist, s)
+        push!(v_hist, 0.0)
+        for _t ∈ 1:t
+            v_hist[_t] += r * γ^t
+        end
+        t += 1
+        s = sp
+        next!(p)
+    end
+    finish!(p)
+    return (;s=s_hist,r=r_hist,v=v_hist)
 end

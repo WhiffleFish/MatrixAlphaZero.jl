@@ -53,12 +53,11 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
         MarkovGames.convert_s(Vector{Float32}, s, game)
     end
 
-    (;value) = oracle(batch_sp)
+    value = oracle(batch_sp)
 
     for i ∈ eachindex(value)
         v[i] = value[i]
     end
-
     
     tree.s_children[s_idx] = s_children
     tree.n_sa[s_idx] = zeros(Int, length(A1), length(A2))

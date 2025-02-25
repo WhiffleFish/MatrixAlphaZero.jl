@@ -17,4 +17,6 @@ include("tree.jl")
 
 include("mcts.jl")
 
+include("nn.jl")
+
 end # module MatrixAlphaZero
