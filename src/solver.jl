@@ -11,6 +11,7 @@
     # Training args
     batchsize       ::  Int     = 128
     lr              ::  Float32 = 3f-4
+    train_intensity ::  Int     = 6
 
     optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(1f0),
@@ -21,15 +22,22 @@
 end
 
 
-struct AlphaZeroPlanner
-
+@proto struct AlphaZeroPlanner{Oracle}
+    oracle::Oracle
 end
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG)
-    p = Progress(sol.max_iter)
+    mcts_iter = sol.steps_per_iter ÷ sol.mcts_params.max_depth
+    total_iter = mcts_iter * sol.max_iter
+    p = Progress(total_iter)
+    buf = Buffer(sol.buff_cap)
     for i ∈ 1:sol.max_iter
-        
-        next!(p)
+        for _ ∈ 1:mcts_iter
+            hist = mcts_sim(sol.mcts_params, game, rand(initialstate(game)))
+            push!(buf, hist)
+            next!(p)
+        end
+        train!(sol, sol.mcts_params.oracle, buf)
     end
-    return AlphaZeroPlanner()
+    return AlphaZeroPlanner(sol.mcts_params.oracle)
 end

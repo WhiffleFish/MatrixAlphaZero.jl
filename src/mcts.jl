@@ -74,7 +74,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false)
     v = 0.0
     r_hist = Float64[]
     v_hist = Float64[0.0]
-    s_hist = [s]
+    s_hist = [MarkovGames.convert_s(Vector{Float32}, s, game)]
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
@@ -85,7 +85,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false)
 
         v += r * γ^t
         push!(r_hist, r)
-        push!(s_hist, s)
+        push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
         push!(v_hist, 0.0)
         for _t ∈ 1:t
             v_hist[_t] += r * γ^t

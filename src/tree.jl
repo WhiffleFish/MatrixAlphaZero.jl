@@ -62,9 +62,6 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
     tree.s_children[s_idx] = s_children
     tree.n_sa[s_idx] = zeros(Int, length(A1), length(A2))
     tree.n_s[s_idx] = 0
-    # foreach(tree.prior, policy) do prior, π_i
-    #     prior[s_idx] = π_i
-    # end
     tree.v[s_idx] = v
     tree.r[s_idx] = r
     
