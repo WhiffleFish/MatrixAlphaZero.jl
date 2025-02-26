@@ -12,7 +12,7 @@ function search(params::MCTSParams, game::MG, s)
     for i ∈ 1:tree_queries
         simulate(params, tree, game, 1)
     end
-    return solve(ucb_matrix_game(tree, c, 1, γ))
+    return solve(ucb_matrix_games(tree, c, 1, γ)...)
 end
 
 function simulate(params, tree, game, s_idx)
@@ -25,7 +25,7 @@ function simulate(params, tree, game, s_idx)
         return 0.0
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, oracle)
-        x,y,t = solve(ucb_matrix_game(tree, c, s_idx, γ))
+        x,y,t = solve(node_matrix_game(tree, c, s_idx, γ))
         return t
     else
         # choose best action for exploration
@@ -40,21 +40,31 @@ function simulate(params, tree, game, s_idx)
         tree.n_sa[s_idx][a] += 1
 
         # solve game with updated statistics
-        x,y,t = solve(ucb_matrix_game(tree, c, s_idx, γ))
+        x,y,t = solve(node_matrix_game(tree, c, s_idx, γ))
         return t
     end
 end
 
-function ucb_matrix_game(tree::Tree, c, s_idx::Int, γ)
-    r = tree.r[s_idx]
-    v = tree.v[s_idx]
+function ucb_exploration(tree::Tree, c::Float64, s_idx::Int)
     n_sa = tree.n_sa[s_idx]
     n_s = tree.n_s[s_idx]
-    return r .+ γ .* v .+ c .* sqrt.(log(max(1,n_s)) ./ max.(1, n_sa))
+    return c .* sqrt.(log(max(1,n_s)) ./ max.(1, n_sa))
+end
+
+function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64)
+    V = node_matrix_game(tree, c, s_idx, γ)
+    Ē = ucb_exploration(tree, c, s_idx)
+    return V .+ Ē, -V .+ Ē
+end
+
+function node_matrix_game(tree::Tree, c, s_idx, γ)
+    r = tree.r[s_idx]
+    v = tree.v[s_idx]
+    return r .+ γ .* v
 end
 
 function explore_action(tree, c, s_idx, γ)
-    x,y,t = solve(ucb_matrix_game(tree, c, s_idx, γ))
+    x,y,t = solve(ucb_matrix_games(tree, c, s_idx, γ)...)
     return action_idx_from_probs(x,y)
 end
 
