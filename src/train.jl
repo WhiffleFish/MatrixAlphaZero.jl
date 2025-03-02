@@ -6,7 +6,7 @@ function train!(sol, oracle, buf)
     for _ in 1:n_batches
         X, y = get_batch(buf, batchsize)
         ∇θ = Flux.gradient(oracle) do oracle
-            l = Flux.mse(dropdims(oracle(X); dims=1), y)
+            l = Flux.Losses.huber_loss(dropdims(oracle(X); dims=1), y)
             Flux.Zygote.ignore_derivatives() do
                 push!(losses, l)
             end
