@@ -76,34 +76,47 @@ function action_idx_from_probs(x,y)
 end
 
 # TODO: change name
-function mcts_sim(params::MCTSParams, game::MG, s; progress=false)
+function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1.0)
     d = params.max_depth
     A1, A2 = actions(game)
     γ = discount(game)
     t = 1
     v = 0.0
     r_hist = Float64[]
-    v_hist = Float64[0.0]
-    s_hist = [MarkovGames.convert_s(Vector{Float32}, s, game)]
+    v_hist = Float64[]
+    s_hist = Vector{Float32}[]
+    policy_hist = (
+        Vector{Float64}[],
+        Vector{Float64}[]
+    )
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
-        x,y,v = search(params, game, s)
+        x,y,gv = search(params, game, s)
+        x = softmax(x ./ temperature)
+        y = softmax(y ./ temperature)
+        
         a_idxs = Tuple(action_idx_from_probs(x,y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
         sp, r = @gen(:sp, :r)(game, s, a)
-
-        v += r * γ^t
+        v += r * γ^(t-1)
         push!(r_hist, r)
         push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
         push!(v_hist, 0.0)
+        push!(policy_hist[1], x)
+        push!(policy_hist[2], y)
         for _t ∈ 1:t
-            v_hist[_t] += r * γ^t
+            v_hist[_t] += r * γ^(t - _t)
         end
         t += 1
         s = sp
         next!(p)
     end
     finish!(p)
-    return (;s=s_hist,r=r_hist,v=v_hist)
+    return (;
+        s       = s_hist,
+        r       = r_hist,
+        v       = v_hist,
+        policy  = policy_hist
+    )
 end
