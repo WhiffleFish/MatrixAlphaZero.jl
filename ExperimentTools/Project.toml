@@ -1,0 +1,15 @@
+name = "ExperimentTools"
+uuid = "7fde32a4-1ade-4293-987a-ae7babf65c50"
+authors = ["WhiffleFish <tylertronics@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+MarkovGames = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
+POMDPTools = "7588e00f-9cae-40de-98dc-e0c70c48cdd7"
+POSGModels = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
+RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+
+[compat]
+MarkovGames = "0.1.0"
+POMDPTools = "1.1.0"
+RecipesBase = "1.3.4"
