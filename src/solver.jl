@@ -26,7 +26,7 @@ end
     oracle::Oracle
 end
 
-function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game))
+function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     mcts_iter = sol.steps_per_iter ÷ sol.mcts_params.max_depth
     total_iter = mcts_iter * sol.max_iter
     p = Progress(total_iter)
@@ -40,6 +40,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         end
         train_info = train!(sol, sol.mcts_params.oracle, buf)
         push!(train_losses, train_info[:losses])
+        call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
     end
     return AlphaZeroPlanner(sol.mcts_params.oracle), (;
         train_losses, buffer=buf
