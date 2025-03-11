@@ -112,6 +112,12 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         s = sp
         next!(p)
     end
+    if !isterminal(game, s)
+        vp = only(params.oracle(MarkovGames.convert_s(Vector{Float32}, s, game)))
+        for _t ∈ 1:(d-1)
+            v_hist[_t] += vp * γ^(t - _t)
+        end
+    end
     finish!(p)
     return (;
         s       = s_hist,
