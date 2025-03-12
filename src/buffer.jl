@@ -1,4 +1,4 @@
-@proto struct Buffer
+struct Buffer
     s::CircularBuffer{Vector{Float32}}
     v::CircularBuffer{Float32}
     p::NTuple{2,CircularBuffer{Vector{Float32}}}
