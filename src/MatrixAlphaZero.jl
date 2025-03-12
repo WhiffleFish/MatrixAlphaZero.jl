@@ -10,6 +10,7 @@ using Random
 using Distributions
 using DataStructures
 using JLD2
+using Distributed
 
 include("matrix.jl")
 

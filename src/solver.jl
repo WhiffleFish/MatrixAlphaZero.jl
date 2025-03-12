@@ -27,24 +27,52 @@ end
 end
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
+    distributed = Distributed.nprocs() > 1
     mcts_iter = sol.steps_per_iter ÷ sol.mcts_params.max_depth
     total_iter = mcts_iter * sol.max_iter
-    p = Progress(total_iter)
+    progress = Progress(total_iter, safe_lock=false)
     buf = Buffer(sol.buff_cap)
     train_losses = Vector{Float32}[]
     for i ∈ 1:sol.max_iter
-        for _ ∈ 1:mcts_iter
-            hist = mcts_sim(sol.mcts_params, game, rand(s0))
+        hists = if distributed
+            distributed_mcts(progress, game, sol.mcts_params, mcts_iter, s0)
+        else
+            serial_mcts(progress, game, sol.mcts_params, mcts_iter, s0)
+        end
+        foreach(hists) do hist
             push!(buf, hist)
-            next!(p)
         end
         train_info = train!(sol, sol.mcts_params.oracle, buf)
         push!(train_losses, train_info[:losses])
         call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
     end
+    finish!(progress)
     return AlphaZeroPlanner(sol.mcts_params.oracle), (;
         train_losses, buffer=buf
     )
+end
+
+function distributed_mcts(progress, game, mcts_params, mcts_iter, s0)
+    # https://discourse.julialang.org/t/does-anyone-have-a-progress-bar-for-pmap/11729/5
+    channel = RemoteChannel(()->Channel{Bool}(), 1)
+    @async while take!(channel)
+        next!(progress)
+    end
+    hists = pmap(1:mcts_iter) do i
+        hist = mcts_sim(mcts_params, game, rand(s0))
+        put!(channel, true)
+        return hist
+    end
+    put!(channel, false)
+    return hists
+end
+
+function serial_mcts(progress, game, mcts_params, mcts_iter, s0)
+    return map(1:mcts_iter) do i
+        hist = mcts_sim(mcts_params, game, rand(s0))
+        next!(progress)
+        return hist
+    end
 end
 
 function oracle_matrix_game(game, oracle, s)
