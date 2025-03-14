@@ -19,7 +19,7 @@ include("buffer.jl")
 include("callbacks.jl")
 
 include("solver.jl")
-export AlphaZeroSolver, MCTSParams
+export AlphaZeroSolver, MCTSParams, behavior
 
 include("tree.jl")
 

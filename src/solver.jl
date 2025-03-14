@@ -22,8 +22,16 @@
 end
 
 
-@proto struct AlphaZeroPlanner{Oracle}
+@proto struct AlphaZeroPlanner{G<:MG, Oracle}
+    game::G
     oracle::Oracle
+end
+
+function behavior(policy::AlphaZeroPlanner, s)
+    (;oracle, game) = policy
+    A1, A2 = actions(game)
+    x,y,v = solve(oracle_matrix_game(game, oracle, s))
+    return SparseCat(A1,x), SparseCat(A2,y)
 end
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
@@ -47,7 +55,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
     end
     finish!(progress)
-    return AlphaZeroPlanner(sol.mcts_params.oracle), (;
+    return AlphaZeroPlanner(game, sol.mcts_params.oracle), (;
         train_losses, buffer=buf
     )
 end
