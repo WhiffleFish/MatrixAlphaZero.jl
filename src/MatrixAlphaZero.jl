@@ -16,6 +16,8 @@ include("matrix.jl")
 
 include("buffer.jl")
 
+include("exploitability.jl")
+
 include("callbacks.jl")
 
 include("solver.jl")
