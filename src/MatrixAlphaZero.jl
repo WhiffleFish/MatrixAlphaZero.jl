@@ -11,6 +11,7 @@ using Distributions
 using DataStructures
 using JLD2
 using Distributed
+using POMDPs
 
 include("matrix.jl")
 
