@@ -40,7 +40,7 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
     counter = length(tree.s) + 1
     frontier = statetype(game)[]
 
-    for (i,a1) ∈ enumerate(A1), (j,a2) ∈ enumerate(A2)
+    for (j,a2) ∈ enumerate(A2), (i,a1) ∈ enumerate(A1) 
         s_children[i,j] = counter
         sp, r_i = @gen(:sp, :r)(game, s, (a1, a2))
         push!(frontier, sp)
@@ -53,6 +53,8 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
         MarkovGames.convert_s(Vector{Float32}, s, game)
     end
 
+    # MAKE SURE THAT matrix given by oracle_matrix_game, and this batch formulation ARE THE SAME
+    # v = oracle_matrix_game(game, oracle, s)
     v̂ = value(oracle, batch_sp)
     for i ∈ eachindex(v̂)
         v[i] = v̂[i]
