@@ -20,6 +20,8 @@ struct ActorCritic{S,A,C}
     critic::C
 end
 
+ActorCritic(actor, critic) = ActorCritic(identity, actor, critic)
+
 Flux.@layer :expand ActorCritic
 
 function ActorCritic(nn_params::NetworkParameters)
@@ -38,6 +40,16 @@ function (ac::ActorCritic)(x; logits=false)
     return (; value, policy)
 end
 
+function value(ac::ActorCritic, x)
+    encoded_input = ac.shared(x)
+    return ac.critic(encoded_input)
+end
+
+function policy(ac::ActorCritic, x)
+    encoded_input = ac.shared(x)
+    return ac.actor(encoded_input)
+end
+
 function getloss(ac::ActorCritic, input; value_target, policy_target)
     encoded_input = ac.shared(input)
     value_loss, value_mse = getloss(ac.critic, encoded_input; value_target)
@@ -47,12 +59,17 @@ end
 
 struct MultiActor{T<:Tuple}
     actors::T
+    MultiActor(t::T) where T<:Tuple = new{T}(t)
+    MultiActor(args...)  = new{typeof(args)}(args)
 end
+
+Base.getindex(actor::MultiActor, i) = getindex(actor.actors, i)
 
 MultiActor(nn_params::NetworkParameters) = MultiActur(DiscreteActor(nn_params, 1), DiscreteActor(nn_params, 2))
 
 (actor::MultiActor)(x; logits=false) = map(actor.actors) do actor
-    actor(x; logits)
+    out = actor(x)
+    logits ? out : softmax(out)
 end
 
 struct DiscreteActor{NET,L}

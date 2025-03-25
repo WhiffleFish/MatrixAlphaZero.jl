@@ -1,21 +1,22 @@
-@proto @kwdef struct MCTSParams{Oracle}
+@proto @kwdef struct MCTSParams{T, Oracle}
     tree_queries    :: Int      = 10
     c               :: Float64  = 1.0
     max_depth       :: Int      = 100
+    temperature     :: T        = t -> 1.0 * (0.95 ^ (t-1))
     oracle          :: Oracle
 end
 
-function search(params::MCTSParams, game::MG, s)
+function search(params::MCTSParams, game::MG, s; temperature=1.0)
     (;tree_queries, c) = params
     γ = discount(game)
     tree = Tree(game, s)
     for i ∈ 1:tree_queries
-        simulate(params, tree, game, 1)
+        simulate(params, tree, game, 1; temperature)
     end
-    return solve(ucb_matrix_games(tree, c, 1, γ)...)
+    return solve(node_matrix_game(tree, c, 1, γ))
 end
 
-function simulate(params, tree, game, s_idx)
+function simulate(params, tree, game, s_idx; temperature=1.0)
     (; c, oracle) = params
     γ = discount(game)
     s = tree.s[s_idx]
@@ -29,9 +30,9 @@ function simulate(params, tree, game, s_idx)
         return t
     else
         # choose best action for exploration
-        a = explore_action(tree, c, s_idx, γ)
+        a = explore_action(tree, c, s_idx, γ; temperature)
         sp_idx = tree.s_children[s_idx][a]
-        v_sample = simulate(params, tree, game, sp_idx)
+        v_sample = simulate(params, tree, game, sp_idx; temperature)
 
         # update node stats
         v̂ = tree.v[s_idx][a]
@@ -51,9 +52,15 @@ function ucb_exploration(tree::Tree, c::Float64, s_idx::Int)
     return c .* sqrt.(log(max(1,n_s)) ./ max.(1, n_sa))
 end
 
-function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64)
-    V = node_matrix_game(tree, c, s_idx, γ)
+function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; temperature=1.0)
     Ē = ucb_exploration(tree, c, s_idx)
+    σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
+    return (σ1 * σ2') .* Ē
+end
+
+function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
+    V = node_matrix_game(tree, c, s_idx, γ)
+    Ē = pucb_exploration(tree, c, s_idx; temperature)
     return V .+ Ē, -V .+ Ē
 end
 
@@ -63,8 +70,8 @@ function node_matrix_game(tree::Tree, c, s_idx, γ)
     return r .+ γ .* v
 end
 
-function explore_action(tree, c, s_idx, γ)
-    x,y,t = solve(ucb_matrix_games(tree, c, s_idx, γ)...)
+function explore_action(tree, c, s_idx, γ; temperature=1.0)
+    x,y,t = solve(ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
     return action_idx_from_probs(x,y)
 end
 
@@ -92,7 +99,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
-        x,y,gv = search(params, game, s)
+        x,y,gv = search(params, game, s; temperature)
         x = softmax(x ./ temperature)
         y = softmax(y ./ temperature)
         
@@ -113,7 +120,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         next!(p)
     end
     if !isterminal(game, s)
-        vp = only(params.oracle(MarkovGames.convert_s(Vector{Float32}, s, game)))
+        vp = only(value(params.oracle, MarkovGames.convert_s(Vector{Float32}, s, game)))
         for _t ∈ 1:(d-1)
             v_hist[_t] += vp * γ^(t - _t)
         end

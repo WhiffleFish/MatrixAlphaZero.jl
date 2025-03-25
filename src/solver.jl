@@ -41,33 +41,38 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     progress = Progress(total_iter, safe_lock=false)
     buf = Buffer(sol.buff_cap)
     train_losses = Vector{Float32}[]
+    value_losses = Vector{Float32}[]
+    policy_losses = Vector{Float32}[]
     for i ∈ 1:sol.max_iter
+        temperature = sol.mcts_params.temperature(i)
         hists = if distributed
-            distributed_mcts(progress, game, sol.mcts_params, mcts_iter, s0)
+            distributed_mcts(progress, game, sol.mcts_params, mcts_iter, s0; temperature)
         else
-            serial_mcts(progress, game, sol.mcts_params, mcts_iter, s0)
+            serial_mcts(progress, game, sol.mcts_params, mcts_iter, s0; temperature)
         end
         foreach(hists) do hist
             push!(buf, hist)
         end
         train_info = train!(sol, sol.mcts_params.oracle, buf)
         push!(train_losses, train_info[:losses])
+        push!(value_losses, train_info[:value_losses])
+        push!(policy_losses, train_info[:policy_losses])
         call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
     end
     finish!(progress)
     return AlphaZeroPlanner(game, sol.mcts_params.oracle), (;
-        train_losses, buffer=buf
+        train_losses, value_losses, policy_losses, buffer=buf
     )
 end
 
-function distributed_mcts(progress, game, mcts_params, mcts_iter, s0)
+function distributed_mcts(progress, game, mcts_params, mcts_iter, s0; temperature=1.0)
     # https://discourse.julialang.org/t/does-anyone-have-a-progress-bar-for-pmap/11729/5
     channel = RemoteChannel(()->Channel{Bool}(), 1)
     @async while take!(channel)
         next!(progress)
     end
     hists = pmap(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0))
+        hist = mcts_sim(mcts_params, game, rand(s0); temperature)
         put!(channel, true)
         return hist
     end
@@ -75,9 +80,9 @@ function distributed_mcts(progress, game, mcts_params, mcts_iter, s0)
     return hists
 end
 
-function serial_mcts(progress, game, mcts_params, mcts_iter, s0)
+function serial_mcts(progress, game, mcts_params, mcts_iter, s0; temperature=1.0)
     return map(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0))
+        hist = mcts_sim(mcts_params, game, rand(s0); temperature)
         next!(progress)
         return hist
     end
@@ -91,7 +96,7 @@ function oracle_matrix_game(game, oracle, s)
         for (j, a2) ∈ enumerate(A2)
             a = (a1, a2)
             sp, r = @gen(:sp, :r)(game, s, a)
-            vp = only(oracle(MarkovGames.convert_s(Vector{Float32}, sp, game)))
+            vp = only(value(oracle, MarkovGames.convert_s(Vector{Float32}, sp, game)))
             mat[i,j] = r + γ * vp
         end
     end

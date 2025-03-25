@@ -53,12 +53,16 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
         MarkovGames.convert_s(Vector{Float32}, s, game)
     end
 
-    value = oracle(batch_sp)
-
-    for i ∈ eachindex(value)
-        v[i] = value[i]
+    v̂ = value(oracle, batch_sp)
+    for i ∈ eachindex(v̂)
+        v[i] = v̂[i]
     end
     
+    prior = policy(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))
+    foreach(tree.prior, prior) do tree_prior, prior_i
+        tree_prior[s_idx] = prior_i
+    end
+
     tree.s_children[s_idx] = s_children
     tree.n_sa[s_idx] = zeros(Int, length(A1), length(A2))
     tree.n_s[s_idx] = 0
@@ -71,5 +75,8 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
     append!(tree.n_s, fill(0, n_frontier))
     append!(tree.v, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
     append!(tree.r, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
+    foreach(tree.prior) do prior 
+        append!(prior, fill(NO_PRIOR, n_frontier))
+    end
     return nothing
 end

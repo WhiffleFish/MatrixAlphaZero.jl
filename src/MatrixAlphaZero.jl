@@ -29,6 +29,7 @@ include("tree.jl")
 include("mcts.jl")
 
 include("nn.jl")
+export ActorCritic, MultiActor
 
 include("train.jl")
 
