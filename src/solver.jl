@@ -22,16 +22,51 @@
 end
 
 
-@proto struct AlphaZeroPlanner{G<:MG, Oracle}
-    game::G
-    oracle::Oracle
+@proto @kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
+    game        ::  G
+    oracle      ::  Oracle
+    max_iter    ::  Int
+    max_time    ::  Float64
+    max_depth   ::  Int
+    c           ::  Float64
 end
 
-function behavior(policy::AlphaZeroPlanner, s)
-    (;oracle, game) = policy
+function AlphaZeroPlanner(
+        oracle::ActorCritic, 
+        game::MG;
+        max_iter    =   0,
+        max_time    =   Inf,
+        max_depth   =   typemax(Int),
+        c           =   1.0
+    )
+    return AlphaZeroPlanner(;
+        game, 
+        oracle = oracle, 
+        max_iter, 
+        max_time, 
+        max_depth, 
+        c
+    )
+end
+
+AlphaZeroPlanner(sol, game; kwargs...) = AlphaZeroPlanner(
+    sol.oracle, game; 
+    max_iter    =   sol.mcts_params.tree_queries, 
+    max_time    =   sol.mcts_params.max_time,
+    max_depth   =   sol.mcts_params.max_depth,
+    c           =   sol.mcts_params.c,
+    kwargs...
+)
+
+function MarkovGames.behavior(policy::AlphaZeroPlanner, s)
+    (;oracle, game, max_iter, max_time, max_depth, c) = policy
     A1, A2 = actions(game)
-    x,y,v = solve(oracle_matrix_game(game, oracle, s))
-    return SparseCat(A1,x), SparseCat(A2,y)
+    x,y,v = if iszero(policy.max_depth) || iszero(policy.max_iter) || iszero(policy.max_time)
+        solve(oracle_matrix_game(game, oracle, s))
+    else
+        search(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c), game, s)
+    end
+    return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y))
 end
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
