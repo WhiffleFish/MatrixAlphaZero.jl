@@ -3,6 +3,7 @@
     c               :: Float64  = 1.0
     max_depth       :: Int      = 100
     temperature     :: T        = t -> 1.0 * (0.95 ^ (t-1))
+    max_time        :: Float64  = Inf
     oracle          :: Oracle
 end
 
