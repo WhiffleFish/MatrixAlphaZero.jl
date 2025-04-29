@@ -78,6 +78,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     train_losses = Vector{Float32}[]
     value_losses = Vector{Float32}[]
     policy_losses = Vector{Float32}[]
+    call(cb, (;oracle=sol.mcts_params.oracle, iter=0))
     for i ∈ 1:sol.max_iter
         temperature = sol.mcts_params.temperature(i)
         hists = if distributed
