@@ -96,7 +96,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
     end
     finish!(progress)
-    return AlphaZeroPlanner(game, sol.mcts_params.oracle), (;
+    return AlphaZeroPlanner(sol, game), (;
         train_losses, value_losses, policy_losses, buffer=buf
     )
 end
