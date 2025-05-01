@@ -8,6 +8,10 @@
 end
 
 function search(params::MCTSParams, game::MG, s; temperature=1.0)
+    if isterminal(game, s)
+        n1, n2 = length.(actions(game))
+        return fill(inv(n1), n1), fill(inv(n2), n2), 0.0
+    end
     (;tree_queries, c) = params
     γ = discount(game)
     tree = Tree(game, s)
