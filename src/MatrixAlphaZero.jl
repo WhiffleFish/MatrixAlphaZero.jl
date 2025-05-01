@@ -13,6 +13,7 @@ using JLD2
 using Distributed
 using POMDPs
 using POMDPTools
+using SpecialFunctions
 
 include("matrix.jl")
 

@@ -7,19 +7,17 @@ function train!(sol, oracle, buf)
     policy_losses = Float32[]
     for _ in 1:n_batches
         X, v_target, p_target = get_batch(buf, batchsize)
+        v_target = prepare_target(oracle.critic, v_target)
+        lv, lp = loss(oracle, X, v_target, p_target)
         ∇θ = Flux.gradient(oracle) do oracle
-            v, p = oracle(X; logits=true)
-            lv = Flux.Losses.huber_loss(dropdims(v; dims=1), v_target)
-            lp = mapreduce(+, p, p_target) do p_i, p_target_i
-                Flux.Losses.logitcrossentropy(p_i, p_target_i)
-            end
-            loss = lv + lp
+            lv, lp = loss(oracle, X, v_target, p_target)
+            l = lv + lp
             Flux.Zygote.ignore_derivatives() do
-                push!(losses, loss)
+                push!(losses, l)
                 push!(value_losses, lv)
                 push!(policy_losses, lp)
             end
-            return loss
+            return l
         end
         Flux.update!(opt_state, oracle, ∇θ[1])
     end
