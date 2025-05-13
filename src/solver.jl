@@ -22,7 +22,7 @@
 end
 
 
-@proto @kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
+@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
     game        ::  G
     oracle      ::  Oracle
     max_iter    ::  Int
@@ -47,6 +47,10 @@ function AlphaZeroPlanner(
         max_depth, 
         c
     )
+end
+
+function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
+    Flux.loadmodel!(planner.oracle, JLD2.load(path))
 end
 
 AlphaZeroPlanner(sol, game; kwargs...) = AlphaZeroPlanner(
