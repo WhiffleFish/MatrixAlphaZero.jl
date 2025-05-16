@@ -4,12 +4,22 @@ authors = ["WhiffleFish <tylertronics@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+MCTS = "e12ccd36-dcad-5f33-8774-9175229e7b33"
 MarkovGames = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
+MatrixAlphaZero = "5b242d70-f97d-4fa7-8667-f0513ab0a030"
 POMDPTools = "7588e00f-9cae-40de-98dc-e0c70c48cdd7"
+POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
 POSGModels = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 
 [compat]
-MarkovGames = "0.1.0"
+Distributed = "1.11.0"
+JLD2 = "0.5.13"
+MCTS = "0.5.6"
 POMDPTools = "1.1.0"
+POMDPs = "1.0.0"
+Random = "1.11.0"
 RecipesBase = "1.3.4"
