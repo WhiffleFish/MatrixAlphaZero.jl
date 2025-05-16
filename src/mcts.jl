@@ -46,8 +46,8 @@ function simulate(params, tree, game, s_idx; temperature=1.0)
         tree.n_sa[s_idx][a] += 1
 
         # solve game with updated statistics
-        x,y,t = solve(node_matrix_game(tree, c, s_idx, γ))
-        return t
+        # x,y,t = solve(node_matrix_game(tree, c, s_idx, γ))
+        return v_sample
     end
 end
 
