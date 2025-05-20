@@ -53,12 +53,22 @@ function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
     Flux.loadmodel!(planner.oracle, JLD2.load(path))
 end
 
-AlphaZeroPlanner(sol, game; kwargs...) = AlphaZeroPlanner(
+AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
     sol.oracle, game; 
     max_iter    =   sol.mcts_params.tree_queries, 
     max_time    =   sol.mcts_params.max_time,
     max_depth   =   sol.mcts_params.max_depth,
     c           =   sol.mcts_params.c,
+    kwargs...
+)
+
+AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
+    planner.oracle, 
+    planner.game,
+    max_iter    =   planner.tree_queries, 
+    max_time    =   planner.max_time,
+    max_depth   =   planner.max_depth,
+    c           =   planner.c,
     kwargs...
 )
 
