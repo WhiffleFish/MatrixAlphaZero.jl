@@ -111,6 +111,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         a_idxs = Tuple(action_idx_from_probs(x,y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
         sp, r = @gen(:sp, :r)(game, s, a)
+        r = zs_reward_scalar(r)
         v += r * γ^(t-1)
         push!(r_hist, r)
         push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
@@ -138,3 +139,6 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         policy  = policy_hist
     )
 end
+
+zs_reward_scalar(x::Number) = x
+zs_reward_scalar(x::Union{Tuple, AbstractArray}) = first(x)
