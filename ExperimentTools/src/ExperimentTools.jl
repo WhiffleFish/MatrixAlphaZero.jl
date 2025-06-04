@@ -13,7 +13,10 @@ using Random
 using MatrixAlphaZero
 const AZ = MatrixAlphaZero
 using DelimitedFiles
+using ArgParse
 
 include("exploitability.jl")
+
+include("argparse.jl")
 
 end # module ExperimentTools
