@@ -32,8 +32,8 @@ end
 end
 
 function AlphaZeroPlanner(
-        oracle::ActorCritic, 
-        game::MG;
+        game::MG,
+        oracle::ActorCritic;
         max_iter    =   0,
         max_time    =   Inf,
         max_depth   =   typemax(Int),
@@ -41,7 +41,7 @@ function AlphaZeroPlanner(
     )
     return AlphaZeroPlanner(;
         game, 
-        oracle = oracle, 
+        oracle, 
         max_iter, 
         max_time, 
         max_depth, 
@@ -65,7 +65,7 @@ function load_oracle(path)
 end
 
 AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
-    sol.oracle, game; 
+    game, sol.oracle;
     max_iter    =   sol.mcts_params.tree_queries, 
     max_time    =   sol.mcts_params.max_time,
     max_depth   =   sol.mcts_params.max_depth,
@@ -73,10 +73,12 @@ AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
     kwargs...
 )
 
+AlphaZeroPlanner(game::MG, sol::AlphaZeroSolver; kwargs...) = AlphaZeroPlanner(sol, game; kwargs...)
+
 AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
-    planner.oracle, 
     planner.game,
-    max_iter    =   planner.tree_queries, 
+    planner.oracle;
+    max_iter    =   planner.max_iter, 
     max_time    =   planner.max_time,
     max_depth   =   planner.max_depth,
     c           =   planner.c,
