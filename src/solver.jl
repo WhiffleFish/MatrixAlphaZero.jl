@@ -50,7 +50,18 @@ function AlphaZeroPlanner(
 end
 
 function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
-    Flux.loadmodel!(planner.oracle, JLD2.load(path))
+    Flux.loadmodel!(planner.oracle, JLD2.load(path)["model_state"])
+end
+
+function load_oracle(path)
+    jldopen(joinpath(path, "oracle.jld2"))["oracle"]
+    if isdir(path)
+        return jldopen(joinpath(path, "oracle.jld2"))["oracle"]
+    elseif isfile(path)
+        return jldopen(path)["oracle"]
+    else # when would this ever be hit? lmao
+        error("$(path) is neither file nor dir")
+    end
 end
 
 AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
