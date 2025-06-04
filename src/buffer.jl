@@ -20,3 +20,15 @@ function Base.push!(buf::Buffer, t::NamedTuple)
 end
 
 Base.length(buf::Buffer) = length(buf.v)
+
+Base.eachindex(buf::Buffer) = Base.OneTo(length(buf))
+
+function Base.getindex(buf::Buffer, args...)
+    return (
+        s = buf.s[args...],
+        v = buf.v[args...],
+        p = map(buf.p) do p 
+            p[args...]
+        end
+    )
+end
