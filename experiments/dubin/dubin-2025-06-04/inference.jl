@@ -133,3 +133,24 @@ simulate(
     planner,
     rand(initialstate(game))
 )
+
+
+##
+using Plots
+using DelimitedFiles
+using Statistics
+br1 = DelimitedFiles.readdlm(joinpath(@__DIR__, "brv/br1.csv"), ',')
+br2 = DelimitedFiles.readdlm(joinpath(@__DIR__, "brv/br2.csv"), ',')
+
+
+iter = axes(br1, 1) .- 1
+
+m1 = mean(br1, dims=2) |> vec
+s1 = std(br1, dims=2) |> vec
+m2 = mean(br2, dims=2) |> vec
+s2 = std(br2, dims=2) |> vec
+
+plot(iter, m1, ribbon=s1)
+plot(iter, m2, ribbon=s2)
+
+plot(m1 + m2)

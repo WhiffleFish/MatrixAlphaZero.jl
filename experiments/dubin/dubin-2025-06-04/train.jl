@@ -50,3 +50,5 @@ sol = MatrixAlphaZero.AlphaZeroSolver(
 cb = AZ.ModelSaveCallback(@modeldir)
 pol, info = solve(sol, game; s0=b0, cb)
 JLD2.jldsave(joinpath(@__DIR__, "train_info.jld2"); info...)
+
+rmprocs(p)
