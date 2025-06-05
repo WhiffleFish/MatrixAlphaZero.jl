@@ -25,7 +25,7 @@ end
 
 game = DubinMG()
 oracle = AZ.load_oracle(@__DIR__)
-planner = AlphaZeroPlanner(game, oracle, max_iter=100)
+planner = AlphaZeroPlanner(game, oracle, max_iter=100, c=10.0)
 mcts_solver = MCTSSolver(n_iterations=100)
 res = ExperimentTools.exploitability(
     game, 
@@ -36,5 +36,5 @@ res = ExperimentTools.exploitability(
     planner, 
     mcts_solver
 )
-ExperimentTools.save_mats(res, joinpath(@__DIR__, "brv"))
+ExperimentTools.save_mats(res, joinpath(@__DIR__, "brv-c10"))
 rmprocs(p)
