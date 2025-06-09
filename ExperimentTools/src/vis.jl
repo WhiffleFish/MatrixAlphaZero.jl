@@ -33,29 +33,6 @@ function stderror(ed::ExploitabilityData)
     end
 end
 
-# @recipe function f(ed::ExploitabilityData)
-#     means = mean(ed)
-#     stds = std(ed)
-    
-#     xs = eachindex(first(means)) .- 1
-#     @series begin
-#         subplot = 1
-#         seriestype = :path
-#         xlabel --> "Training Iteration"
-#         ylabel --> "Training Iteration"
-#         ribbon = σ_i
-#         xs, first(means)
-#     end
-#     @series begin
-#         subplot = 2
-#         seriestype = :path
-#         xlabel --> "Training Iteration"
-#         ylabel --> "Training Iteration"
-#         ribbon = σ_i
-#         xs, first(means)
-#     end
-# end
-
 @recipe function f(ed::ExploitabilityData)
     means = mean(ed)
     stds = std(ed)
@@ -65,7 +42,7 @@ end
         xs = eachindex(μ_i) .- 1
         @series begin
             subplot := i
-            seriestype = :path
+            seriestype := :path
             primary := false
             linecolor := nothing
             fillcolor := :lightgray
@@ -78,7 +55,7 @@ end
         end
         @series begin
             subplot := i
-            seriestype = :path
+            seriestype := :path
             xlabel --> "Training Iteration"
             ylabel --> "BRV"
             label --> nothing
@@ -87,6 +64,38 @@ end
     end
 end
 
-function exploitability_data()
-    
+struct NashConvData
+    μ::Vector{Float64}
+    σ::Vector{Float64}
+end
+
+function NashConvData(ed::ExploitabilityData)
+    return NashConvData(
+        reduce(+, mean(ed)),
+        mapreduce(+, std(ed)) do σ_i
+            σ_i .^ 2
+        end .|> sqrt
+    )
+end
+
+@recipe function f(nc::NashConvData)
+    xs = eachindex(nc.μ) .- 1
+    label --> nothing
+    xlabel --> "Training Iteration"
+    ylabel --> "NashConv"
+
+    @series begin
+        seriestype := :path
+        primary := false
+        linecolor := nothing
+        fillcolor := :lightgray
+        fillalpha := 0.5
+        fillrange := nc.μ .- nc.σ
+        # ensure no markers are shown for the error band
+        markershape := :none
+        # return series data
+        xs, nc.μ .+ nc.σ
+    end
+
+    xs, nc.μ
 end

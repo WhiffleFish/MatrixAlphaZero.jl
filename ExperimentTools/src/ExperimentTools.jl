@@ -21,6 +21,6 @@ include("exploitability.jl")
 include("argparse.jl")
 
 include("vis.jl")
-export ExploitabilityData
+export ExploitabilityData, NashConvData
 
 end # module ExperimentTools
