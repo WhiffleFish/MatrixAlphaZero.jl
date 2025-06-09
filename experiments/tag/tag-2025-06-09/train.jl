@@ -1,7 +1,6 @@
 using Distributed
 using JLD2
 using ExperimentTools
-using ArgParse
 
 args = ExperimentTools.parse_commandline(
     iter = 40,
