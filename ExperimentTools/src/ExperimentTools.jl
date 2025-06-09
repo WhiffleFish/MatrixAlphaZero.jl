@@ -14,9 +14,13 @@ using MatrixAlphaZero
 const AZ = MatrixAlphaZero
 using DelimitedFiles
 using ArgParse
+using Statistics
 
 include("exploitability.jl")
 
 include("argparse.jl")
+
+include("vis.jl")
+export ExploitabilityData
 
 end # module ExperimentTools
