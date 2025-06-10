@@ -10,11 +10,13 @@ using Distributed
 using JLD2
 using MatrixAlphaZero
 using Random
-using MatrixAlphaZero
 const AZ = MatrixAlphaZero
 using DelimitedFiles
 using ArgParse
 using Statistics
+
+include("helpers.jl")
+export @figdir
 
 include("exploitability.jl")
 

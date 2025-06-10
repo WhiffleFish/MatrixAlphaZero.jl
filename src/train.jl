@@ -32,9 +32,9 @@ function get_batch(buf::Buffer, batchsize::Int)
     return reduce(hcat, buf.s[idxs]), buf.v[idxs], p
 end
 
-macro modeldir()
+macro modeldir(args...)
     isnothing(__source__.file) && return nothing
     _dirname = dirname(String(__source__.file::Symbol))
     dir = isempty(_dirname) ? pwd() : abspath(_dirname)
-    return :(joinpath($dir, "models"))
+    return :(joinpath($dir, "models", $(args)...))
 end

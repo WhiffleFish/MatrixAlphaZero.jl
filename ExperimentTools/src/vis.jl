@@ -1,3 +1,4 @@
+# TODO: should probably be called BestResponseData
 struct ExploitabilityData
     br::NTuple{2,Matrix{Float64}}
 end
