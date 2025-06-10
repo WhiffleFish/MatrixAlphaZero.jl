@@ -3,3 +3,7 @@ Manifest.toml
 scratch
 .DS_Store
 *.jld2
+
+*.png
+*.pdf
+*.gif
