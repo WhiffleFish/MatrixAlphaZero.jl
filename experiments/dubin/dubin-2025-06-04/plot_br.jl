@@ -44,3 +44,19 @@ p_exp = plot(iter, m1 + m2, ribbon=sqrt.( s1 .^2 .+ s2 .^2 ), xlabel="", ylabel=
 savefig(p_exp, joinpath(@__DIR__, "figures", "exp-c10.pdf"))
 savefig(p_exp, joinpath(@__DIR__, "figures", "exp-c10.png"))
 
+
+##
+using Plots
+using ExperimentTools
+
+ed1 = ExploitabilityData(joinpath(@__DIR__, "brv-c1"))
+plot(ed1, lw=2)
+plot(NashConvData(ed1), lw=5)
+savefig(joinpath(@__DIR__, "figures", ""))
+
+
+ed10 = ExploitabilityData(joinpath(@__DIR__, "brv-c10"))
+plot(ed10, lw=2)
+plot(NashConvData(ed10), lw=5)
+
+@figdir("nashconv", "nashconv.pdf")
