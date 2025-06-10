@@ -85,16 +85,14 @@ AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
     kwargs...
 )
 
-function MarkovGames.behavior(policy::AlphaZeroPlanner, s)
+function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
     (;oracle, game, max_iter, max_time, max_depth, c) = policy
     A1, A2 = actions(game)
-    x,y,v = if iszero(policy.max_depth) || iszero(policy.max_iter) || iszero(policy.max_time)
-        solve(oracle_matrix_game(game, oracle, s))
-    else
-        search(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c), game, s)
-    end
-    return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y))
+    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c), game, s)
+    return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y)), (;info..., v)
 end
+
+MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, s))
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     distributed = Distributed.nprocs() > 1

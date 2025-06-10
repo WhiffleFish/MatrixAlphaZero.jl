@@ -7,18 +7,28 @@
     oracle          :: Oracle
 end
 
-function search(params::MCTSParams, game::MG, s; temperature=1.0)
-    if isterminal(game, s)
-        n1, n2 = length.(actions(game))
-        return fill(inv(n1), n1), fill(inv(n2), n2), 0.0
-    end
-    (;tree_queries, c) = params
-    γ = discount(game)
+uniform(n::Int) = fill(inv(n), n)
+
+function search_info(params::MCTSParams, game::MG, s; temperature=1.0)
     tree = Tree(game, s)
-    for i ∈ 1:tree_queries
-        simulate(params, tree, game, 1; temperature)
+    x,y,v = if isterminal(game, s)
+        n1, n2 = length.(actions(game))
+        uniform(n1), uniform(n2), 0.0
+    elseif iszero(params.max_depth) || iszero(params.tree_queries) || iszero(params.max_time)
+        solve(oracle_matrix_game(game, params.oracle, s))
+    else
+        (;tree_queries, c) = params
+        γ = discount(game)
+        for i ∈ 1:tree_queries
+            simulate(params, tree, game, 1; temperature)
+        end
+        solve(node_matrix_game(tree, c, 1, γ))
     end
-    return solve(node_matrix_game(tree, c, 1, γ))
+    return (x,y,v), (;tree)
+end
+
+function search(params::MCTSParams, game::MG, s; temperature=1.0)
+    return first(search_info(params, game, s; temperature))
 end
 
 function simulate(params, tree, game, s_idx; temperature=1.0)
