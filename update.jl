@@ -10,4 +10,4 @@ Pkg.update()
 
 Pkg.activate(joinpath(@__DIR__, "experiments"))
 @info "updating experiments..."
-Pkg.project()
+Pkg.update()

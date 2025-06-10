@@ -1,4 +1,4 @@
-@proto @kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, MP}
+@kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, MP}
     max_iter        ::  Int     = 100
     n_iter          ::  Int     = 200
     steps_per_iter  ::  Int     = 50_000

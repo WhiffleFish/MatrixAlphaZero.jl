@@ -1,4 +1,4 @@
-@proto @kwdef struct MCTSParams{T, Oracle}
+@kwdef struct MCTSParams{T, Oracle}
     tree_queries    :: Int      = 10
     c               :: Float64  = 1.0
     max_depth       :: Int      = 100

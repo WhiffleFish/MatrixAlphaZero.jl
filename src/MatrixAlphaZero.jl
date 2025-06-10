@@ -3,7 +3,6 @@ module MatrixAlphaZero
 using MarkovGames
 using Flux
 using TensorGames
-using ProtoStructs
 using ProgressMeter
 using LinearAlgebra
 using Random

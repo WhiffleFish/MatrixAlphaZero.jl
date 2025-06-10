@@ -1,4 +1,4 @@
-@proto struct Tree{S}
+struct Tree{S}
     s           ::  Vector{S}                           # [s_idx] -> s
     s_children  ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> sp_idx
     n_sa        ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> n_sa
