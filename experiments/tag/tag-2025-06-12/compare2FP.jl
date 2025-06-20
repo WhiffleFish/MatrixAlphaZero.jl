@@ -15,7 +15,7 @@ end
 game = TagMG()
 sol = FictitiousPlaySolver(
     verbose     = true, 
-    iter        = 20, 
+    iter        = 100,
     threaded    = true,
 )
 pol = solve(sol, game)
@@ -30,11 +30,13 @@ end
 
 oracle = AZ.load_oracle(@__DIR__)
 planner = AlphaZeroPlanner(game, oracle)
-V_az_full = map(0:40) do i
+model_nums = eachindex(readdir(@modeldir)) .- 1
+
+V_az_full = map(model_nums) do i
     Flux.loadmodel!(planner, joinpath(@modeldir, "oracle"*AZ.iter2string(i)*".jld2"))
     AZ.value(oracle, VS)
 end
-P_az_full = map(0:40) do i
+P_az_full = map(model_nums) do i
     Flux.loadmodel!(planner, joinpath(@modeldir, "oracle"*AZ.iter2string(i)*".jld2"))
     AZ.policy(oracle, VS)
 end
@@ -101,12 +103,12 @@ function plot_value(game, oracle, x, y; kwargs...)
     return heatmap(V', aspect_ratio=1.0; kwargs...)
 end
 
-plot_value(game, oracle, 3, 5)
+plot_value(game, oracle, 3, 3)
 
 
 ## anim
 
-pol_anim = @animate for pol_diff in pol_diffs
+pol_anim = @animate for pol_diff in pol_diffs[1]
     plot(pol_diff, label="")
 end
 
@@ -128,7 +130,7 @@ gif(anim, joinpath(@__DIR__, "az_value_diff.gif"), fps=3)
 
 ## where do the policies really differ?
 planner = AlphaZeroPlanner(game, oracle, max_iter=10, c=10.0)
-Flux.loadmodel!(planner, joinpath(@modeldir, "oracle0040.jld2"))
+Flux.loadmodel!(planner, joinpath(@modeldir, "oracle0100.jld2"))
 
 perms = sortperm(last(pol_diffs[2]), rev=true)
 perm_idx = 1

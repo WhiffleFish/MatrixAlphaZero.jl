@@ -84,6 +84,33 @@ savefig(joinpath(@__DIR__, "figures", "AZ-FP-value-mse.pdf"))
 savefig(joinpath(@__DIR__, "figures", "AZ-FP-value-mse.png"))
 
 
+
+S = states(game)
+pursuer_state = Coord(1,1)
+
+function plot_value(game, oracle, x, y; kwargs...)
+    V = zeros(game.floor...)
+    for i ∈ 1:game.floor[1], j ∈ 1:game.floor[2]
+        s_vec = MarkovGames.convert_s(
+            Vector{Float32}, 
+            TagState(Coord(x,y), Coord(i,j), false), 
+            game
+        )
+        V[i,j] = only(AZ.value(oracle, s_vec))
+    end
+    return heatmap(V', aspect_ratio=1.0; kwargs...)
+end
+
+anim = @animate for i in eachindex(V_diffs)
+    histogram(V_diffs[i], title="V_AZ - V_FP iter $i")
+end
+
+gif(anim, @figdir("value_diffs.gif"), fps=3)
+
+
+plot_value(game, oracle, 3, 5)
+
+
 ## anim
 
 pol_anim = @animate for pol_diff in pol_diffs
