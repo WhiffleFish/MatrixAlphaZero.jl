@@ -33,4 +33,11 @@ include("mcts.jl")
 include("train.jl")
 export @modeldir
 
+
+
+## Experimental
+include(joinpath("bounds", "bounds.jl"))
+using .Bounds
+
+
 end # module MatrixAlphaZero
