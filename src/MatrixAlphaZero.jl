@@ -15,6 +15,7 @@ using POMDPTools
 using SpecialFunctions
 
 include("matrix.jl")
+export PATHSolver, RegretSolver
 
 include("buffer.jl")
 
