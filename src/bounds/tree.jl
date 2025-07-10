@@ -15,14 +15,14 @@ MarkovGames.discount(tree::Tree) = tree.γ
 
 const NO_CHILDREN = Matrix{Int}(undef, 0, 0)
 
-function Tree(game::MG, s=rand(initialstate(game)))
+function Tree(sol::BoundSolver, game::MG, s=rand(initialstate(game)))
     return Tree(
         [s],                            # s
         Matrix{Int}[NO_CHILDREN],       # s_children
         [Matrix{Float64}(undef, 0, 0)], # Q̲
         [Matrix{Float64}(undef, 0, 0)], # Q̄
-        Float64[0.0],
-        Float64[0.0],
+        Float64[sol.v_lower],
+        Float64[sol.v_upper],
         ([Vector{Float64}(undef, 0)], [Vector{Float64}(undef, 0)]),
         ([Vector{Float64}(undef, 0)], [Vector{Float64}(undef, 0)]),
         [Matrix{Float64}(undef, 0, 0)],  # r
@@ -57,8 +57,8 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, solver)
     n_frontier = length(frontier)
 
     tree.s_children[s_idx] = s_children
-    tree.v_lower[s_idx] = fill(solver.v_lower, na1, na2)
-    tree.v_upper[s_idx] = fill(solver.v_upper, na1, na2)
+    tree.v_lower[s_idx] = solver.v_lower(frontier)
+    tree.v_upper[s_idx] = solver.v_upper(frontier)
     tree.r[s_idx] = r
 
     x̲, y̲, V̲ = AZ.solve(lower_bound_matrix_game(tree, s_idx))
