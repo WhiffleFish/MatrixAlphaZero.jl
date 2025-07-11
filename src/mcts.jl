@@ -49,20 +49,20 @@ function simulate(params, tree, game, s_idx; temperature=1.0)
         # choose best action for exploration
         a = explore_action(matrix_solver, tree, c, s_idx, γ; temperature)
         sp_idx = tree.s_children[s_idx][a]
-        v_sample = tree.r[s_idx][a] + γ * simulate(params, tree, game, sp_idx; temperature)
+        vp_sample = simulate(params, tree, game, sp_idx; temperature)
 
 
         # update node stats
         v̂ = tree.v[s_idx][a]
         nsa = tree.n_sa[s_idx][a]
         # tree.v[s_idx][a]     = v_sample # (v_sample - v̂) / (ns + 1)
-        tree.v[s_idx][a]     = v̂ + (v_sample - v̂) / (nsa + 1)
+        tree.v[s_idx][a]     = v̂ + (vp_sample - v̂) / (nsa + 1)
         tree.n_s[s_idx]     += 1
         tree.n_sa[s_idx][a] += 1
 
         # solve game with updated statistics
         # x,y,t = solve(matrix_solver, node_matrix_game(tree, c, s_idx, γ))
-        return v_sample
+        return tree.r[s_idx][a] + γ * vp_sample 
     end
 end
 
