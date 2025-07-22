@@ -22,22 +22,24 @@
 end
 
 
-@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
-    game        ::  G
-    oracle      ::  Oracle
-    max_iter    ::  Int
-    max_time    ::  Float64
-    max_depth   ::  Int
-    c           ::  Float64
+@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle, M} <: Policy
+    game            ::  G
+    oracle          ::  Oracle
+    matrix_solver   ::  M
+    max_iter        ::  Int
+    max_time        ::  Float64
+    max_depth       ::  Int
+    c               ::  Float64
 end
 
 function AlphaZeroPlanner(
         game::MG,
         oracle::ActorCritic;
-        max_iter    =   0,
-        max_time    =   Inf,
-        max_depth   =   typemax(Int),
-        c           =   1.0
+        max_iter        =   0,
+        max_time        =   Inf,
+        max_depth       =   typemax(Int),
+        c               =   1.0,
+        matrix_solver   = RegretSolver(20)
     )
     return AlphaZeroPlanner(;
         game, 
@@ -45,7 +47,8 @@ function AlphaZeroPlanner(
         max_iter, 
         max_time, 
         max_depth, 
-        c
+        c,
+        matrix_solver
     )
 end
 
@@ -66,10 +69,11 @@ end
 
 AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
     game, sol.oracle;
-    max_iter    =   sol.mcts_params.tree_queries, 
-    max_time    =   sol.mcts_params.max_time,
-    max_depth   =   sol.mcts_params.max_depth,
-    c           =   sol.mcts_params.c,
+    max_iter        =   sol.mcts_params.tree_queries, 
+    max_time        =   sol.mcts_params.max_time,
+    max_depth       =   sol.mcts_params.max_depth,
+    c               =   sol.mcts_params.c,
+    matrix_solver   = sol.mcts_params.matrix_solver,
     kwargs...
 )
 
@@ -78,17 +82,18 @@ AlphaZeroPlanner(game::MG, sol::AlphaZeroSolver; kwargs...) = AlphaZeroPlanner(s
 AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
     planner.game,
     planner.oracle;
-    max_iter    =   planner.max_iter, 
-    max_time    =   planner.max_time,
-    max_depth   =   planner.max_depth,
-    c           =   planner.c,
+    max_iter        =   planner.max_iter, 
+    max_time        =   planner.max_time,
+    max_depth       =   planner.max_depth,
+    c               =   planner.c,
+    matrix_solver   = sol.mcts_params.matrix_solver,
     kwargs...
 )
 
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
-    (;oracle, game, max_iter, max_time, max_depth, c) = policy
+    (;oracle, game, max_iter, max_time, max_depth, c, matrix_solver) = policy
     A1, A2 = actions(game)
-    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c), game, s)
+    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c, matrix_solver), game, s)
     return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y)), (;info..., v)
 end
 
