@@ -49,18 +49,14 @@ function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
     end
     n_frontier = length(frontier)
 
-    batch_sp = mapreduce(hcat, frontier) do s
-        MarkovGames.convert_s(Vector{Float32}, s, game)
-    end
-
     # MAKE SURE THAT matrix given by oracle_matrix_game, and this batch formulation ARE THE SAME
     # v = oracle_matrix_game(game, oracle, s)
-    v̂ = value(oracle, batch_sp)
+    v̂ = batch_state_value(oracle, game, frontier)
     for i ∈ eachindex(v̂)
         v[i] = v̂[i]
     end
     
-    prior = policy(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))
+    prior = state_policy(oracle, game, s)
     foreach(tree.prior, prior) do tree_prior, prior_i
         tree_prior[s_idx] = prior_i
     end

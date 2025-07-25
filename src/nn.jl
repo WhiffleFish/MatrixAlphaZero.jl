@@ -1,7 +1,32 @@
+function state_value end
+function batch_state_value end
+
+function state_policy end
+function batch_state_policy end
+
+
 struct ActorCritic{S,A,C}
     shared::S
     actor::A
     critic::C
+end
+
+state_value(ac::ActorCritic, game::MG, s) = value(ac, convert_s(Vector{Float32}, s, game))
+
+function batched_state_value(ac::ActorCritic, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return value(ac, batch_s)
+end
+
+state_policy(ac::ActorCritic, game::MG, s) = value(ac, convert_s(Vector{Float32}, s, game))
+
+function batched_state_policy(ac::ActorCritic, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return policy(ac, batch_s)
 end
 
 ActorCritic(actor, critic) = ActorCritic(identity, actor, critic)
@@ -136,3 +161,22 @@ function criticloss(critic::HLGaussCritic, x::AbstractArray, y::AbstractArray)
     ŷ = critic(x; logits=true)
     return Flux.Losses.logitcrossentropy(ŷ, y)
 end 
+
+## 
+
+struct StaticActorCritic{A,C}
+    actor::A
+    critic::C
+end
+
+state_value(ac::StaticActorCritic, game, s) = ac.critic(s)
+
+batch_state_value(ac::StaticActorCritic, game, sv) = map(sv) do s_i
+    ac.critic(s_i)
+end
+
+state_policy(ac::StaticActorCritic, game, s) = ac.actor(s)
+
+batch_state_policy(ac::StaticActorCritic, game, sv) = map(sv) do s_i
+    ac.actor(s_i)
+end

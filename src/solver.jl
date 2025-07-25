@@ -34,7 +34,7 @@ end
 
 function AlphaZeroPlanner(
         game::MG,
-        oracle::ActorCritic;
+        oracle;
         max_iter        =   0,
         max_time        =   Inf,
         max_depth       =   typemax(Int),
@@ -69,10 +69,10 @@ end
 
 AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
     game, sol.oracle;
-    max_iter        =   sol.mcts_params.tree_queries, 
-    max_time        =   sol.mcts_params.max_time,
-    max_depth       =   sol.mcts_params.max_depth,
-    c               =   sol.mcts_params.c,
+    max_iter        = sol.mcts_params.tree_queries, 
+    max_time        = sol.mcts_params.max_time,
+    max_depth       = sol.mcts_params.max_depth,
+    c               = sol.mcts_params.c,
     matrix_solver   = sol.mcts_params.matrix_solver,
     kwargs...
 )
