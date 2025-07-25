@@ -28,4 +28,6 @@ export ExploitabilityData, NashConvData
 include("models.jl")
 export ModelLibrary
 
+include("simple.jl")
+
 end # module ExperimentTools
