@@ -1,5 +1,10 @@
-function train!(sol, oracle, buf)
-    (; batchsize, steps_per_iter, train_intensity, optimiser) = sol
+function train!(
+        sol, oracle, buf;
+        batchsize = sol.batchsize,
+        steps_per_iter = sol.steps_per_iter,
+        train_intensity = sol.train_intensity,
+        optimiser = sol.optimiser
+    )
     n_batches = (steps_per_iter * train_intensity) ÷ batchsize
     opt_state = Flux.setup(optimiser, oracle)
     losses = Float32[]
