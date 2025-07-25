@@ -14,7 +14,7 @@ end
 game = TagMG(reward_model=DiscreteTag.DenseReward(peak=1.0))
 oracle = AZ.load_oracle(@__DIR__)
 planner = AlphaZeroPlanner(game, oracle, max_iter=1000, c=10.0)
-Flux.loadmodel!(planner, @modeldir("oracle0040.jld2"))
+Flux.loadmodel!(planner, @modeldir("oracle0100.jld2"))
 
 sim = HistoryRecorder(max_steps=50)
 hist = simulate(sim, game, planner)
@@ -93,3 +93,18 @@ savefig(@figdir("policy-crossentropy-change.pdf"))
 
 info = jldopen(joinpath(@__DIR__,"train_info.jld2"))
 info["buffer"]
+
+##
+using Plots
+default(grid=false, framestyle=:box, fontfamily="Computer Modern", label="")
+using DelimitedFiles
+using ExperimentTools
+
+br1 = readdlm(joinpath(@__DIR__, "brv", "br1.csv"), ',')
+br2 = readdlm(joinpath(@__DIR__, "brv", "br2.csv"), ',')
+
+plot(br1)
+plot(br2)
+
+ed = ExploitabilityData(joinpath(@__DIR__, "brv"))
+plot(ed)

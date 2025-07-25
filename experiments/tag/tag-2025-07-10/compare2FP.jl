@@ -103,7 +103,7 @@ function plot_value(game, oracle, x, y; kwargs...)
     return heatmap(V', aspect_ratio=1.0; kwargs...)
 end
 
-plot_value(game, oracle, 3, 3)
+plot_value(game, oracle, 5, 5)
 
 
 ## anim
