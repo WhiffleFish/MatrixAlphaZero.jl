@@ -49,20 +49,20 @@ function simulate(params, tree, game, s_idx; temperature=1.0)
         # choose best action for exploration
         a = explore_action(matrix_solver, tree, c, s_idx, γ; temperature)
         sp_idx = tree.s_children[s_idx][a]
-        vp_sample = simulate(params, tree, game, sp_idx; temperature)
-
+        vp = simulate(params, tree, game, sp_idx; temperature)
 
         # update node stats
         v̂ = tree.v[s_idx][a]
         nsa = tree.n_sa[s_idx][a]
-        # tree.v[s_idx][a]     = v_sample # (v_sample - v̂) / (ns + 1)
-        tree.v[s_idx][a]     = v̂ + (vp_sample - v̂) / (nsa + 1)
+        # tree.v[s_idx][a]     = v̂ + (vp - v̂) / (nsa + 1)
+        tree.v[s_idx][a]     = vp
         tree.n_s[s_idx]     += 1
         tree.n_sa[s_idx][a] += 1
 
         # solve game with updated statistics
-        # x,y,t = solve(matrix_solver, node_matrix_game(tree, c, s_idx, γ))
-        return tree.r[s_idx][a] + γ * vp_sample 
+        x,y,t = solve(matrix_solver, node_matrix_game(tree, c, s_idx, γ))
+        # return tree.r[s_idx][a] + γ * vp
+        return t
     end
 end
 
@@ -74,8 +74,9 @@ end
 
 function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; temperature=1.0)
     Ē = ucb_exploration(tree, c, s_idx)
-    σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
-    return (σ1 * σ2') .* Ē
+    # σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
+    # return (σ1 * σ2') .* Ē
+    return Ē
 end
 
 function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
@@ -92,7 +93,13 @@ end
 
 function explore_action(matrix_solver, tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
     x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
+    # v = tree.v[s_idx]
     return action_idx_from_probs(x,y)
+    # nsa = tree.n_sa[s_idx]
+    # min_idx = argmin(nsa)
+    # return min_idx
+    # return argmin(tree.n_sa[s_idx])
+    # return action_idx_from_probs(uniform(size(v,1)), uniform(size(v,2)))
 end
 
 function action_idx_from_probs(x,y)
