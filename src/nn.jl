@@ -13,16 +13,16 @@ end
 
 state_value(ac::ActorCritic, game::MG, s) = value(ac, convert_s(Vector{Float32}, s, game))
 
-function batched_state_value(ac::ActorCritic, game::MG, sv)
+function batch_state_value(ac::ActorCritic, game::MG, sv)
     batch_s = mapreduce(hcat, sv) do s_i
         convert_s(Vector{Float32}, s_i, game)
     end
     return value(ac, batch_s)
 end
 
-state_policy(ac::ActorCritic, game::MG, s) = value(ac, convert_s(Vector{Float32}, s, game))
+state_policy(ac::ActorCritic, game::MG, s) = policy(ac, convert_s(Vector{Float32}, s, game))
 
-function batched_state_policy(ac::ActorCritic, game::MG, sv)
+function batch_state_policy(ac::ActorCritic, game::MG, sv)
     batch_s = mapreduce(hcat, sv) do s_i
         convert_s(Vector{Float32}, s_i, game)
     end
