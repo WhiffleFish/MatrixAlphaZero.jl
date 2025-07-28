@@ -34,26 +34,31 @@ end
 function _expand_s!(tree::Tree, s_idx::Int, game::MG, oracle)
     s = tree.s[s_idx]
     A1, A2 = actions(game)
-    s_children = zeros(Int, length(A1), length(A2))
-    r = zeros(Float64, length(A1), length(A2))
-    v = zeros(Float64, length(A1), length(A2))
+    na1, na2 = length(A1), length(A2)
+    s_children = zeros(Int, na1, na2)
+    r = zeros(Float64, na1, na2)
+    v = zeros(Float64, na1, na2)
     counter = length(tree.s) + 1
+    _counter = 1
     frontier = statetype(game)[]
+    nonterminal = trues(na1*na2)
 
     for (j,a2) ∈ enumerate(A2), (i,a1) ∈ enumerate(A1) 
         s_children[i,j] = counter
         sp, r_i = @gen(:sp, :r)(game, s, (a1, a2))
         push!(frontier, sp)
         r[i,j] = r_i
+        isterminal(game, sp) && (nonterminal[_counter] = false)
         counter += 1
+        _counter += 1
     end
     n_frontier = length(frontier)
 
     # MAKE SURE THAT matrix given by oracle_matrix_game, and this batch formulation ARE THE SAME
     # v = oracle_matrix_game(game, oracle, s)
     v̂ = batch_state_value(oracle, game, frontier)
-    for i ∈ eachindex(v̂)
-        v[i] = v̂[i]
+    for i ∈ eachindex(v̂, nonterminal)
+        v[i] = v̂[i] * nonterminal[i]
     end
     
     prior = state_policy(oracle, game, s)
