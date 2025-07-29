@@ -74,9 +74,9 @@ end
 
 function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; temperature=1.0)
     Ē = ucb_exploration(tree, c, s_idx)
-    # σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
-    # return (σ1 * σ2') .* Ē
-    return Ē
+    # return Ē
+    σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
+    return (σ1 * σ2') .* Ē
 end
 
 function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
@@ -92,7 +92,9 @@ function node_matrix_game(tree::Tree, c, s_idx, γ)
 end
 
 function explore_action(matrix_solver, tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
-    x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
+    Ā = ucb_matrix_games(tree, c, s_idx, γ; temperature)[1]
+    x,y,t = solve(matrix_solver, Ā)
+    # x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
     # v = tree.v[s_idx]
     return action_idx_from_probs(x,y)
     # nsa = tree.n_sa[s_idx]
