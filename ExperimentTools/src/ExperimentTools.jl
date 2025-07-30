@@ -14,6 +14,10 @@ const AZ = MatrixAlphaZero
 using DelimitedFiles
 using ArgParse
 using Statistics
+using SDAGames
+using SDAGames.SNRGame
+using SDAGames.SatelliteDynamics
+using LinearAlgebra
 
 include("helpers.jl")
 export @figdir
@@ -29,5 +33,7 @@ include("models.jl")
 export ModelLibrary
 
 include("simple.jl")
+
+include("sda.jl")
 
 end # module ExperimentTools
