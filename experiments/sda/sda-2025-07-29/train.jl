@@ -72,6 +72,7 @@ actor = MultiActor(
 )
 
 oracle = ActorCritic(trunk, actor, critic)
+jldsave(joinpath(@__DIR__, "oracle.jld2"); oracle)
 
 sol = MatrixAlphaZero.AlphaZeroSolver(
     oracle=oracle, steps_per_iter=steps_per_iter, max_iter=iter, 
