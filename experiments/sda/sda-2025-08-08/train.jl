@@ -23,17 +23,6 @@ max_depth = args["max_depth"]
     using Flux
     using POMDPTools
     using Distributions
-end
-
-EXPR_PATH = abspath(joinpath(dirname(@__DIR__), "..", "..", "experiments"))
-
-Pkg.activate(EXPR_PATH)
-println(Pkg.project().path)
-
-using SDAGames.SNRGame
-@everywhere begin
-    Pkg.activate(abspath(joinpath(dirname(@__DIR__), "..", "..", "experiments")))
-    println(Pkg.project().path)
     using SDAGames.SNRGame
     using SDAGames.SatelliteDynamics
 end
