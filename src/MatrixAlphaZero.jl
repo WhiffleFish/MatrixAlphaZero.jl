@@ -13,6 +13,7 @@ using Distributed
 using POMDPs
 using POMDPTools
 using SpecialFunctions
+using D3Trees
 
 include("matrix.jl")
 export PATHSolver, RegretSolver
@@ -34,7 +35,7 @@ include("mcts.jl")
 include("train.jl")
 export @modeldir
 
-
+include("vis.jl")
 
 ## Experimental
 include(joinpath("bounds", "bounds.jl"))

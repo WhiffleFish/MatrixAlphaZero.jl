@@ -4,6 +4,7 @@ authors = ["WhiffleFish <tylertronics@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+D3Trees = "e3df1716-f71e-5df9-9e2d-98e193103c45"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
@@ -21,6 +22,7 @@ TensorGames = "dad72d94-522a-402a-84d3-a630e8ffd4d6"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
+D3Trees = "0.3.4"
 DataStructures = "0.18.20"
 Distributed = "1.11.0"
 Distributions = "0.25.117"
