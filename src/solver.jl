@@ -86,7 +86,7 @@ AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
     max_time        =   planner.max_time,
     max_depth       =   planner.max_depth,
     c               =   planner.c,
-    matrix_solver   = sol.mcts_params.matrix_solver,
+    matrix_solver   =   planner.matrix_solver,
     kwargs...
 )
 
