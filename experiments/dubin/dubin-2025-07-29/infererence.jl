@@ -5,16 +5,18 @@ begin
     using ExperimentTools
     const Tools = ExperimentTools
     using Plots
-    using POSGModels.DiscreteTag
+    using POSGModels.Dubin
     using Flux
     using POMDPTools
     using POMDPs
 end
 
-game = TagMG(reward_model=DiscreteTag.DenseReward(peak=1.0))
+game = DubinMG()
 oracle = AZ.load_oracle(@__DIR__)
 planner = AlphaZeroPlanner(game, oracle, max_iter=1000, c=10.0)
 Flux.loadmodel!(planner, @modeldir("oracle0100.jld2"))
+
+initialstate(game)
 
 sim = HistoryRecorder(max_steps=50)
 hist = simulate(sim, game, planner)

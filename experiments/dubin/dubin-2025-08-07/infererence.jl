@@ -5,16 +5,22 @@ begin
     using ExperimentTools
     const Tools = ExperimentTools
     using Plots
-    using POSGModels.DiscreteTag
+    using POSGModels.Dubin
     using Flux
     using POMDPTools
     using POMDPs
 end
 
-game = TagMG(reward_model=DiscreteTag.DenseReward(peak=1.0))
+
+
+game = DubinMG()
 oracle = AZ.load_oracle(@__DIR__)
-planner = AlphaZeroPlanner(game, oracle, max_iter=1000, c=10.0)
+iter = 1000
+planner = AlphaZeroPlanner(game, oracle, max_iter=iter, c=10.0)
 Flux.loadmodel!(planner, @modeldir("oracle0100.jld2"))
+
+using POSGModels.StaticArrays
+s = JointDubinState(SA[1,1,deg2rad(45)], SA[2,2,deg2rad(45 + 180)])
 
 sim = HistoryRecorder(max_steps=50)
 hist = simulate(sim, game, planner)
@@ -23,7 +29,11 @@ anim = @animate for h_i in hist
     plot(game, h_i[:s], h_i[:behavior])
 end
 
-gif(anim, @figdir("sim-1000iter.gif"), fps=2)
+gif(anim, @figdir("sim-$(iter)iter2.gif"), fps=2)
+
+plot(collect(hist[:r]))
+
+Dubin.closest_distance(hist[1].s, hist[2].s)
 
 s = rand(initialstate(game))
 @edit isterminal(game,  s)

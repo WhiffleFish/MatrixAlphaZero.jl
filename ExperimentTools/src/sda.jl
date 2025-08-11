@@ -7,6 +7,8 @@ struct OracleInfo
     sun_pos::NTuple{2, Vector{Float64}}
 end
 
+Base.eachindex(info::OracleInfo) = eachindex(info.s_target)
+
 function OracleInfo(game, oracle, d_observer, θs = LinRange(0, 2π, 100); r_target = 5e6, n=1000)
     s_observers = rand(d_observer, n)
     oracle_info = map(θs) do θ
