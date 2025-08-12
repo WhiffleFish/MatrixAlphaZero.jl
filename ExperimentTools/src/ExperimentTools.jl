@@ -18,6 +18,7 @@ using SDAGames
 using SDAGames.SNRGame
 using SDAGames.SatelliteDynamics
 using LinearAlgebra
+using Base.Threads
 
 include("helpers.jl")
 export @figdir
@@ -35,5 +36,8 @@ export ModelLibrary
 include("simple.jl")
 
 include("sda.jl")
+
+include("llbr.jl")
+
 
 end # module ExperimentTools
