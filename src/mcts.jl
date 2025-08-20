@@ -85,7 +85,10 @@ function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; tempe
     return V .+ Ē, -V .+ Ē
 end
 
-function node_matrix_game(tree::Tree, c, s_idx, γ)
+# FIXME: why do we even have this??
+node_matrix_game(tree::Tree, c, s_idx, γ) = node_matrix_game(tree, s_idx, γ)
+
+function node_matrix_game(tree::Tree, s_idx::Int, γ::Float64)
     r = tree.r[s_idx]
     v = tree.v[s_idx]
     return r .+ γ .* v
