@@ -23,7 +23,7 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 D3Trees = "0.3.4"
-DataStructures = "0.18.20"
+DataStructures = "0.19"
 Distributed = "1.11.0"
 Distributions = "0.25.117"
 Flux = "0.16.3"
