@@ -56,6 +56,10 @@ function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
     Flux.loadmodel!(planner.oracle, JLD2.load(path)["model_state"])
 end
 
+function Flux.loadmodel!(oracle::ActorCritic, path::String)
+    Flux.loadmodel!(oracle, JLD2.load(path)["model_state"])
+end
+
 function load_oracle(path)
     jldopen(joinpath(path, "oracle.jld2"))["oracle"]
     if isdir(path)
