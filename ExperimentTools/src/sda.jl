@@ -65,15 +65,18 @@ Base.getindex(info::OracleInfo, i::Int) = OracleInfoFrame(
     info.sun_pos
 )
 
-@recipe function f(info::OracleInfoFrame)
+@recipe function f(info::OracleInfoFrame; lim=1.5e7)
+    (; sun_pos) = info
+    aspect_ratio --> 1.0
+    size --> (800, 800)
+    xticks --> [-lim, 0, lim]
+    yticks --> [-lim, 0, lim]
+    page_width = 2lim
+
     @series begin
-        xticks --> [-1.5e7, 0, 1.5e7]
-        yticks --> [-1.5e7, 0, 1.5e7]
         clims --> info.valrange,
-        ms --> 5
+        ms --> 10
         alpha --> 0.5
-        aspect_ratio --> 1.0
-        size --> (800, 800)
         
         seriestype := :scatter
         markerstrokewidth := 0
@@ -84,11 +87,14 @@ Base.getindex(info::OracleInfo, i::Int) = OracleInfoFrame(
     @series begin
         seriestype := :scatter
         ms --> 10
+        label --> "Target"
         [info.s_target[1]], [info.s_target[2]]
     end
-    # @series begin
-    #     arrow := true
-    #     lw --> 5
-    #     [sun_pos[1][1], sun_pos[2][1]], [sun_pos[1][2], sun_pos[2][2]]
-    # end
+
+    @series begin
+        arrow := true
+        label --> "Sun Direction"
+        lw --> 5
+        [sun_pos[1][1], sun_pos[2][1]] .* 0.1 * page_width, [sun_pos[1][2], sun_pos[2][2]] .* 0.1 * page_width
+    end
 end
