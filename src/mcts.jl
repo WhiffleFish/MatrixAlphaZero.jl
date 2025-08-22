@@ -8,6 +8,18 @@
     oracle          :: Oracle
 end
 
+function MCTSParams(planner::AlphaZeroPlanner; kwargs...)
+    return MCTSParams(;
+        tree_queries = planner.max_iter,
+        c = planner.c,
+        max_depth = planner.max_depth,
+        max_time = planner.max_time,
+        matrix_solver = planner.matrix_solver,
+        oracle = planner.oracle,
+        kwargs...
+    )
+end
+
 uniform(n::Int) = fill(inv(n), n)
 
 function search_info(params::MCTSParams, game::MG, s; temperature=1.0)
