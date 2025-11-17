@@ -19,6 +19,7 @@ using SDAGames.SNRGame
 using SDAGames.SatelliteDynamics
 using LinearAlgebra
 using Base.Threads
+using ProgressMeter
 
 include("helpers.jl")
 export @figdir
