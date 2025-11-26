@@ -13,3 +13,10 @@ POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
 POSGModels = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
+
+[sources]
+ExperimentTools = {path = "../ExperimentTools"}
+FictitiousPlay = {path = "/Users/tyler/.julia/dev/FictitiousPlay"}
+MatrixAlphaZero = {path = ".."}
+POSGModels = {path = "../../POSGModels"}
+SDAGames = {path = "../../SDAGames"}
