@@ -32,3 +32,10 @@ function Base.getindex(buf::Buffer, args...)
         end
     )
 end
+
+function Base.empty!(buf::Buffer)
+    empty!(buf.s)
+    empty!(buf.v)
+    empty!.(buf.p)
+    buf
+end
