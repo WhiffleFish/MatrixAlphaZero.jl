@@ -39,28 +39,45 @@ end
 game = SNRSDAGame(
     observer=d_observer, target=d_target, altitude_bounds=(100e3, 2e7),
 )
-oracle = AZ.load_oracle(@__DIR__)
-planner = AlphaZeroPlanner(game, oracle, max_iter=100, c=10.0)
-Flux.loadmodel!(planner, @modeldir("oracle0100.jld2"))
+oracle = Flux.loadmodel!(AZ.load_oracle(@__DIR__), @modeldir("oracle0100.jld2"))
+planner = AlphaZeroPlanner(game, oracle, max_iter=1000, c=10.0)
 
 oracle_info = ExperimentTools.OracleInfo(game, oracle, d_observer; n=50_000)
-plot(oracle_info[10], ms=10, clims=info_i.valrange)
 
 anim = @animate for i ∈ eachindex(oracle_info)
-    plot(oracle_info[i], ms=10, clims=info_i.valrange)
+    plot(oracle_info[i], ms=10, clims=oracle_info.valrange)
 end
 
-gif(anim, @figdir("value.gif"), fps=3)
+gif(anim, @figdir("value.gif"), fps=5)
 
 
-hist = simulate(HistoryRecorder(max_steps=100), game, planner)
+hist = simulate(HistoryRecorder(max_steps=20), game, planner)
 
-plot(game, hist)
+lim = 2e7
+plot(game, hist[3], xlims=(-lim,lim), ylims=(-lim,lim), aspect_ratio=1.0, size=(500,500))
+
+anim = @animate for h_i ∈ hist
+    plot(game, h_i, xlims=(-lim,lim), ylims=(-lim,lim), aspect_ratio=1.0, size=(500,500))
+end
+
+gif(anim, @figdir("traj.gif"), fps=5)
+
+map(hist) do h_i
+    entropy(h_i[:behavior][1].probs)
+end |> plot
+
+plot(hist[:r] |> collect)
+
 
 anim = @animate for hi ∈ hist
     plot(game, hi, xlims=(-2e7, 2e7), ylims=(-2e7, 2e7))
 end
 gif(anim, @figdir("sim.gif"), fps=3)
+
+
+s0 = rand(initialstate(game))
+b, info = behavior_info(planner, s0)
+
 
 plot(game, hist[1])
 
