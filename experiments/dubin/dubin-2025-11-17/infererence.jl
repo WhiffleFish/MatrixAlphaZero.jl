@@ -11,11 +11,10 @@ begin
     using POMDPs
 end
 
-game = DubinMG()
+game = DubinMG(V=(1.0, 1.0))
 oracle = Flux.loadmodel!(AZ.load_oracle(@__DIR__), @modeldir("oracle0100.jld2"))
-iter = 1000
+iter = 100
 planner = AlphaZeroPlanner(game, oracle, max_iter=iter, c=10.0)
-
 
 using POSGModels.StaticArrays
 s = JointDubinState(SA[1,1,deg2rad(45)], SA[2,2,deg2rad(45 + 180)])
@@ -27,7 +26,7 @@ anim = @animate for h_i in hist
     plot(game, h_i[:s], h_i[:behavior])
 end
 
-gif(anim, @figdir("sim-$(iter)iter2.gif"), fps=2)
+gif(anim, @figdir("sim-$(iter)iter.gif"), fps=2)
 
 plot(collect(hist[:r]))
 
@@ -53,8 +52,9 @@ plot(reduce(vcat,info["train_losses"]))
 plot(reduce(vcat,info["value_losses"]))
 plot(reduce(vcat,info["policy_losses"]))
 
-histogram(info["buffer"].v)
 
+histogram(info["buffer"].v)
+length(info["buffer"].v)
 ## simulate
 
 s = TagState(Coord(2,2), Coord(1,1))
@@ -161,3 +161,12 @@ using JLD2
 info = jldopen(joinpath(@__DIR__, "train_info.jld2"))
 plot(reduce(vcat, info["value_losses"]))
 plot(reduce(vcat, info["policy_losses"]))
+histogram(info["buffer"].v)
+
+##
+
+b0 = ImplicitDistribution() do rng
+    s1 = Dubin.Vec3(rand(rng) * 10, rand(rng) * 10, rand(rng) * 2π)
+    s2 = Dubin.Vec3(rand(rng) * 10, rand(rng) * 10, rand(rng) * 2π)
+    return JointDubinState(s1, s2)
+end
