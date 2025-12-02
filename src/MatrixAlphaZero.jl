@@ -33,7 +33,7 @@ include("tree.jl")
 include("mcts.jl")
 
 include("train.jl")
-export @modeldir
+export @modeldir, @model
 
 include("vis.jl")
 

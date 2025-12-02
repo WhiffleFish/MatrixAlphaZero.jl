@@ -107,9 +107,9 @@ function node_matrix_game(tree::Tree, s_idx::Int, γ::Float64)
 end
 
 function explore_action(matrix_solver, tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
-    Ā = ucb_matrix_games(tree, c, s_idx, γ; temperature)[1]
-    x,y,t = solve(matrix_solver, Ā)
-    # x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
+    # Ā = ucb_matrix_games(tree, c, s_idx, γ; temperature)[1]
+    # x,y,t = solve(matrix_solver, Ā)
+    x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
     # v = tree.v[s_idx]
     return action_idx_from_probs(x,y)
     # nsa = tree.n_sa[s_idx]

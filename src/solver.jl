@@ -114,6 +114,8 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     policy_losses = Vector{Float32}[]
     call(cb, (;oracle=sol.mcts_params.oracle, iter=0))
     for i ∈ 1:sol.max_iter
+        lr = sol.lr * 0.9f0 ^ (i-1)
+        empty!(buf)
         temperature = sol.mcts_params.temperature(i)
         hists = if distributed
             distributed_mcts(progress, game, sol.mcts_params, mcts_iter, s0; temperature)
@@ -123,11 +125,12 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         foreach(hists) do hist
             push!(buf, hist)
         end
-        train_info = train!(sol, sol.mcts_params.oracle, buf)
+        train_info = train!(sol, sol.mcts_params.oracle, buf; lr)
         push!(train_losses, train_info[:losses])
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])
         call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
+        # decay!(sol.optimiser, 0.9)
     end
     finish!(progress)
     return AlphaZeroPlanner(sol, game), (;
