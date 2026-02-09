@@ -1,0 +1,3 @@
+- Used rollout values instead of tree search values as targets
+- Added weightnorm penalty
+- initial state dist is best response initial state
