@@ -1,0 +1,3 @@
+- Used tree search values as targets rather than simulation outcome
+- Added weightnorm penalty
+- initial state dist is best response initial state
