@@ -129,7 +129,6 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
     call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
     for i ∈ 1:sol.max_iter
-        lr = sol.lr * 0.9f0 ^ (i-1)
         temperature = sol.mcts_params.temperature(i)
         selfplay_oracle = (use_ema && sol.ema_selfplay) ? ema_oracle : online_oracle
         mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
@@ -142,7 +141,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         foreach(hists) do hist
             push!(buf, hist)
         end
-        train_info = train!(sol, online_oracle, buf; lr, opt_state, steps_per_iter=samples_added)
+        train_info = train!(sol, online_oracle, buf; opt_state, steps_per_iter=samples_added)
         if use_ema
             ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         end
