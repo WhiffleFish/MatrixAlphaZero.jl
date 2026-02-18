@@ -6,6 +6,7 @@
     max_time        :: Float64  = Inf
     matrix_solver   :: MS       = RegretSolver(20)
     oracle          :: Oracle
+    value_target    :: Symbol   = :search
 end
 
 function MCTSParams(planner::AlphaZeroPlanner; kwargs...)
@@ -17,6 +18,19 @@ function MCTSParams(planner::AlphaZeroPlanner; kwargs...)
         matrix_solver = planner.matrix_solver,
         oracle = planner.oracle,
         kwargs...
+    )
+end
+
+function with_oracle(params::MCTSParams, oracle)
+    return MCTSParams(;
+        tree_queries = params.tree_queries,
+        c = params.c,
+        max_depth = params.max_depth,
+        temperature = params.temperature,
+        max_time = params.max_time,
+        matrix_solver = params.matrix_solver,
+        oracle,
+        value_target = params.value_target
     )
 end
 
@@ -66,8 +80,7 @@ function simulate(params, tree, game, s_idx; temperature=1.0)
         # update node stats
         v̂ = tree.v[s_idx][a]
         nsa = tree.n_sa[s_idx][a]
-        # tree.v[s_idx][a]     = v̂ + (vp - v̂) / (nsa + 1)
-        tree.v[s_idx][a]     = vp
+        tree.v[s_idx][a]     = v̂ + (vp - v̂) / (nsa + 1)
         tree.n_s[s_idx]     += 1
         tree.n_sa[s_idx][a] += 1
 
@@ -86,8 +99,7 @@ end
 
 function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; temperature=1.0)
     Ē = ucb_exploration(tree, c, s_idx)
-    # return Ē
-    σ1, σ2 = softmax.(getindex.(tree.prior, s_idx) ./ temperature)
+    σ1, σ2 = map(p -> temperature_scale_probs(p, temperature), getindex.(tree.prior, s_idx))
     return (σ1 * σ2') .* Ē
 end
 
@@ -126,6 +138,24 @@ function action_idx_from_probs(x,y)
     )
 end
 
+function temperature_scale_probs(p::AbstractVector, temperature::Real)
+    if temperature <= 0
+        q = zero(p)
+        q[argmax(p)] = one(eltype(q))
+        return q
+    elseif temperature == 1
+        return p
+    end
+    q = p .^ inv(temperature)
+    z = sum(q)
+    if z > 0
+        q ./= z
+    else
+        q .= inv(length(q))
+    end
+    return q
+end
+
 # TODO: change name
 function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1.0)
     d = params.max_depth
@@ -140,12 +170,16 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         Vector{Float64}[],
         Vector{Float64}[]
     )
+    use_search_targets = params.value_target == :search
+    if !use_search_targets && params.value_target != :rollout
+        throw(ArgumentError("Unsupported value_target=$(params.value_target). Use :search or :rollout."))
+    end
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
         x,y,gv = search(params, game, s; temperature)
-        x = softmax(x ./ temperature)
-        y = softmax(y ./ temperature)
+        x = temperature_scale_probs(x, temperature)
+        y = temperature_scale_probs(y, temperature)
         
         a_idxs = Tuple(action_idx_from_probs(x,y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
@@ -154,17 +188,19 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
         v += r * γ^(t-1)
         push!(r_hist, r)
         push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
-        push!(v_hist, 0.0)
+        push!(v_hist, use_search_targets ? gv : 0.0)
         push!(policy_hist[1], x)
         push!(policy_hist[2], y)
-        for _t ∈ 1:t
-            v_hist[_t] += r * γ^(t - _t)
+        if !use_search_targets
+            for _t ∈ 1:t
+                v_hist[_t] += r * γ^(t - _t)
+            end
         end
         t += 1
         s = sp
         next!(p)
     end
-    if !isterminal(game, s)
+    if !use_search_targets && !isterminal(game, s)
         vp = only(value(params.oracle, MarkovGames.convert_s(Vector{Float32}, s, game)))
         for _t ∈ 1:(d-1)
             v_hist[_t] += vp * γ^(t - _t)

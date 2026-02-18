@@ -4,11 +4,12 @@ function train!(
         steps_per_iter = sol.steps_per_iter,
         train_intensity = sol.train_intensity,
         optimiser = sol.optimiser,
+        opt_state = nothing,
         lr,
         λ = 1f-2
     )
     n_batches = (steps_per_iter * train_intensity) ÷ batchsize
-    opt_state = Flux.setup(optimiser, oracle)
+    isnothing(opt_state) && (opt_state = Flux.setup(optimiser, oracle))
     Optimisers.adjust!(opt_state; eta=lr)
     losses = Float32[]
     value_losses = Float32[]

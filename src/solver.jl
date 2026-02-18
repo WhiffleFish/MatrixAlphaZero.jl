@@ -12,6 +12,9 @@
     batchsize       ::  Int     = 128
     lr              ::  Float32 = 3f-4
     train_intensity ::  Int     = 6
+    ema_decay       ::  Float32 = 0f0
+    ema_selfplay    ::  Bool    = false
+    ema_callback    ::  Bool    = false
 
     optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(1f0),
@@ -19,6 +22,13 @@
         Flux.Optimisers.Adam(lr)
     )
     rng             ::  RNG = Random.default_rng()
+end
+
+function ema_update!(ema_model, model, decay::Real)
+    for (ema_param, param) in zip(Flux.trainables(ema_model), Flux.trainables(model))
+        @. ema_param = decay * ema_param + (1 - decay) * param
+    end
+    return ema_model
 end
 
 
@@ -72,7 +82,7 @@ function load_oracle(path)
 end
 
 AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
-    game, sol.oracle;
+    game, sol.mcts_params.oracle;
     max_iter        = sol.mcts_params.tree_queries, 
     max_time        = sol.mcts_params.max_time,
     max_depth       = sol.mcts_params.max_depth,
@@ -105,35 +115,55 @@ MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, 
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     distributed = Distributed.nprocs() > 1
-    mcts_iter = sol.steps_per_iter ÷ sol.mcts_params.max_depth
+    online_oracle = sol.mcts_params.oracle
+    use_ema = sol.ema_decay > 0
+    ema_oracle = use_ema ? deepcopy(online_oracle) : online_oracle
+    mcts_iter = max(1, sol.steps_per_iter ÷ sol.mcts_params.max_depth)
     total_iter = mcts_iter * sol.max_iter
     progress = Progress(total_iter, safe_lock=false)
     buf = Buffer(sol.buff_cap)
+    opt_state = Flux.setup(sol.optimiser, online_oracle)
     train_losses = Vector{Float32}[]
     value_losses = Vector{Float32}[]
     policy_losses = Vector{Float32}[]
-    call(cb, (;oracle=sol.mcts_params.oracle, iter=0))
+    cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+    call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
     for i ∈ 1:sol.max_iter
         lr = sol.lr * 0.9f0 ^ (i-1)
-        empty!(buf)
         temperature = sol.mcts_params.temperature(i)
+        selfplay_oracle = (use_ema && sol.ema_selfplay) ? ema_oracle : online_oracle
+        mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
         hists = if distributed
-            distributed_mcts(progress, game, sol.mcts_params, mcts_iter, s0; temperature)
+            distributed_mcts(progress, game, mcts_params, mcts_iter, s0; temperature)
         else
-            serial_mcts(progress, game, sol.mcts_params, mcts_iter, s0; temperature)
+            serial_mcts(progress, game, mcts_params, mcts_iter, s0; temperature)
         end
+        samples_added = sum(length(hist.v) for hist in hists; init=0)
         foreach(hists) do hist
             push!(buf, hist)
         end
-        train_info = train!(sol, sol.mcts_params.oracle, buf; lr)
+        train_info = train!(sol, online_oracle, buf; lr, opt_state, steps_per_iter=samples_added)
+        if use_ema
+            ema_update!(ema_oracle, online_oracle, sol.ema_decay)
+        end
         push!(train_losses, train_info[:losses])
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])
-        call(cb, (;oracle=sol.mcts_params.oracle, iter=i))
+        cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+        call(cb, (;oracle=cb_oracle, iter=i, online_oracle, ema_oracle))
         # decay!(sol.optimiser, 0.9)
     end
     finish!(progress)
-    return AlphaZeroPlanner(sol, game), (;
+    planner_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+    planner = AlphaZeroPlanner(
+        game, planner_oracle;
+        max_iter      = sol.mcts_params.tree_queries,
+        max_time      = sol.mcts_params.max_time,
+        max_depth     = sol.mcts_params.max_depth,
+        c             = sol.mcts_params.c,
+        matrix_solver = sol.mcts_params.matrix_solver
+    )
+    return planner, (;
         train_losses, value_losses, policy_losses, buffer=buf
     )
 end
