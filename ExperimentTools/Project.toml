@@ -23,10 +23,10 @@ SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [sources]
-MarkovGames = {path = "../../MarkovGames"}
+MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
 MatrixAlphaZero = {path = ".."}
-POSGModels = {path = "../../POSGModels"}
-SDAGames = {path = "../../SDAGames"}
+POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
+SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}
 
 [compat]
 ArgParse = "1.2.0"

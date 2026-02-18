@@ -15,8 +15,9 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 
 [sources]
+MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
 ExperimentTools = {path = "../ExperimentTools"}
-FictitiousPlay = {path = "/Users/tyler/.julia/dev/FictitiousPlay"}
 MatrixAlphaZero = {path = ".."}
-POSGModels = {path = "../../POSGModels"}
-SDAGames = {path = "../../SDAGames"}
+FictitiousPlay = {url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
+POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
+SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}

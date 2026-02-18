@@ -22,8 +22,8 @@ TensorGames = "dad72d94-522a-402a-84d3-a630e8ffd4d6"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [sources]
-MarkovGames = {path = "../MarkovGames"}
-POSGModels = {path = "../POSGModels"}
+MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
+POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
 
 [compat]
 D3Trees = "0.3.4"
@@ -40,3 +40,4 @@ Random = "1.11.0"
 SpecialFunctions = "2.5.1"
 TensorGames = "0.3.9"
 Zygote = "0.7.6"
+
