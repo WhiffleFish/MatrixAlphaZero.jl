@@ -129,13 +129,13 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
     call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
     for i ∈ 1:sol.max_iter
-        temperature = sol.mcts_params.temperature(i)
+        ϵ = sol.mcts_params.ϵ(i)
         selfplay_oracle = (use_ema && sol.ema_selfplay) ? ema_oracle : online_oracle
         mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
         hists = if distributed
-            distributed_mcts(progress, game, mcts_params, mcts_iter, s0; temperature)
+            distributed_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ)
         else
-            serial_mcts(progress, game, mcts_params, mcts_iter, s0; temperature)
+            serial_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ)
         end
         samples_added = sum(length(hist.v) for hist in hists; init=0)
         foreach(hists) do hist
@@ -167,14 +167,14 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     )
 end
 
-function distributed_mcts(progress, game, mcts_params, mcts_iter, s0; temperature=1.0)
+function distributed_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ=0.30)
     # https://discourse.julialang.org/t/does-anyone-have-a-progress-bar-for-pmap/11729/5
     channel = RemoteChannel(()->Channel{Bool}(), 1)
     @async while take!(channel)
         next!(progress)
     end
     hists = pmap(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0); temperature)
+        hist = mcts_sim(mcts_params, game, rand(s0); ϵ)
         put!(channel, true)
         return hist
     end
@@ -182,9 +182,9 @@ function distributed_mcts(progress, game, mcts_params, mcts_iter, s0; temperatur
     return hists
 end
 
-function serial_mcts(progress, game, mcts_params, mcts_iter, s0; temperature=1.0)
+function serial_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ=0.30)
     return map(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0); temperature)
+        hist = mcts_sim(mcts_params, game, rand(s0); ϵ)
         next!(progress)
         return hist
     end

@@ -1,8 +1,8 @@
-@kwdef struct MCTSParams{T, Oracle, MS}
+@kwdef struct MCTSParams{E, Oracle, MS}
     tree_queries    :: Int      = 10
     c               :: Float64  = 1.0
     max_depth       :: Int      = 100
-    temperature     :: T        = t -> 1.0 * (0.95 ^ (t-1))
+    ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
     max_time        :: Float64  = Inf
     matrix_solver   :: MS       = RegretSolver(20)
     oracle          :: Oracle
@@ -26,7 +26,7 @@ function with_oracle(params::MCTSParams, oracle)
         tree_queries = params.tree_queries,
         c = params.c,
         max_depth = params.max_depth,
-        temperature = params.temperature,
+        ϵ = params.ϵ,
         max_time = params.max_time,
         matrix_solver = params.matrix_solver,
         oracle,
@@ -36,7 +36,7 @@ end
 
 uniform(n::Int) = fill(inv(n), n)
 
-function search_info(params::MCTSParams, game::MG, s; temperature=1.0)
+function search_info(params::MCTSParams, game::MG, s; ϵ=0.30)
     (;matrix_solver) = params
     tree = Tree(game, s)
     x,y,v = if isterminal(game, s)
@@ -48,18 +48,18 @@ function search_info(params::MCTSParams, game::MG, s; temperature=1.0)
         (;tree_queries, c) = params
         γ = discount(game)
         for i ∈ 1:tree_queries
-            simulate(params, tree, game, 1; temperature)
+            simulate(params, tree, game, 1; ϵ)
         end
         solve(matrix_solver, node_matrix_game(tree, c, 1, γ))
     end
     return (x,y,v), (;tree)
 end
 
-function search(params::MCTSParams, game::MG, s; temperature=1.0)
-    return first(search_info(params, game, s; temperature))
+function search(params::MCTSParams, game::MG, s; ϵ=0.30)
+    return first(search_info(params, game, s; ϵ))
 end
 
-function simulate(params, tree, game, s_idx; temperature=1.0)
+function simulate(params, tree, game, s_idx; ϵ=0.30)
     (; c, oracle, matrix_solver) = params
     γ = discount(game)
     s = tree.s[s_idx]
@@ -73,9 +73,9 @@ function simulate(params, tree, game, s_idx; temperature=1.0)
         return t
     else
         # choose best action for exploration
-        a = explore_action(matrix_solver, tree, c, s_idx, γ; temperature)
+        a = explore_action(matrix_solver, tree, c, s_idx, γ; ϵ)
         sp_idx = tree.s_children[s_idx][a]
-        vp = simulate(params, tree, game, sp_idx; temperature)
+        vp = simulate(params, tree, game, sp_idx; ϵ)
 
         # update node stats
         v̂ = tree.v[s_idx][a]
@@ -97,15 +97,15 @@ function ucb_exploration(tree::Tree, c::Float64, s_idx::Int)
     return c .* sqrt.(log(max(1,n_s)) ./ max.(1, n_sa))
 end
 
-function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; temperature=1.0)
+function pucb_exploration(tree::Tree, c::Float64, s_idx::Int; ϵ=0.30)
     Ē = ucb_exploration(tree, c, s_idx)
-    σ1, σ2 = map(p -> temperature_scale_probs(p, temperature), getindex.(tree.prior, s_idx))
+    σ1, σ2 = map(p -> eps_exploration(p, ϵ), getindex.(tree.prior, s_idx))
     return (σ1 * σ2') .* Ē
 end
 
-function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
+function ucb_matrix_games(tree::Tree, c::Float64, s_idx::Int, γ::Float64; ϵ=0.30)
     V = node_matrix_game(tree, c, s_idx, γ)
-    Ē = pucb_exploration(tree, c, s_idx; temperature)
+    Ē = pucb_exploration(tree, c, s_idx; ϵ)
     return V .+ Ē, -V .+ Ē
 end
 
@@ -118,10 +118,10 @@ function node_matrix_game(tree::Tree, s_idx::Int, γ::Float64)
     return r .+ γ .* v
 end
 
-function explore_action(matrix_solver, tree::Tree, c::Float64, s_idx::Int, γ::Float64; temperature=1.0)
-    # Ā = ucb_matrix_games(tree, c, s_idx, γ; temperature)[1]
+function explore_action(matrix_solver, tree::Tree, c::Float64, s_idx::Int, γ::Float64; ϵ=0.30)
+    # Ā = ucb_matrix_games(tree, c, s_idx, γ; ϵ)[1]
     # x,y,t = solve(matrix_solver, Ā)
-    x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; temperature)...)
+    x,y,t = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; ϵ)...)
     # v = tree.v[s_idx]
     return action_idx_from_probs(x,y)
     # nsa = tree.n_sa[s_idx]
@@ -138,26 +138,10 @@ function action_idx_from_probs(x,y)
     )
 end
 
-function temperature_scale_probs(p::AbstractVector, temperature::Real)
-    if temperature <= 0
-        q = zero(p)
-        q[argmax(p)] = one(eltype(q))
-        return q
-    elseif temperature == 1
-        return p
-    end
-    q = p .^ inv(temperature)
-    z = sum(q)
-    if z > 0
-        q ./= z
-    else
-        q .= inv(length(q))
-    end
-    return q
-end
+eps_exploration(p, ϵ) = inv(length(p)) .* ϵ .+ (1 .- ϵ) .* p
 
 # TODO: change name
-function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1.0)
+function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
     d = params.max_depth
     A1, A2 = actions(game)
     γ = discount(game)
@@ -177,9 +161,9 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, temperature=1
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
-        x,y,gv = search(params, game, s; temperature)
-        x = temperature_scale_probs(x, temperature)
-        y = temperature_scale_probs(y, temperature)
+        x,y,gv = search(params, game, s; ϵ)
+        x = eps_exploration(x, ϵ) # FIXME: (maybe) should we use 
+        y = eps_exploration(y, ϵ)
         
         a_idxs = Tuple(action_idx_from_probs(x,y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])

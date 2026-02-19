@@ -18,7 +18,7 @@ max_depth = args["max_depth"]
 # Stability-focused defaults
 width = 32
 lr = 3f-4
-train_intensity = 2
+train_intensity = 1
 ema_decay = 0.99f0
 ema_selfplay = true
 ema_callback = true
@@ -60,7 +60,6 @@ sol = MatrixAlphaZero.AlphaZeroSolver(
         tree_queries= tree_queries, 
         oracle, 
         max_depth   = max_depth,
-        temperature = t -> 1.0 * (0.90 ^ (t-1)),
         c           = 10.0
     )
 )

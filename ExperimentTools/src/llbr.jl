@@ -46,7 +46,7 @@ function joint_policy_from_tree(game, planner, tree)
     end
 end
 
-function search_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; temperature=1.0, every=10, progress=true)
+function search_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; ϵ=0.30, every=10, progress=true)
     tree = AZ.Tree(game, s)
     (;tree_queries) = params
     iter    = Int[]
@@ -56,7 +56,7 @@ function search_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s;
     γ = discount(game)
     p = Progress(tree_queries; enabled=progress)
     for i ∈ 1:tree_queries
-        AZ.simulate(params, tree, game, 1; temperature)
+        AZ.simulate(params, tree, game, 1; ϵ)
         if iszero(mod(i, every))
             π1 = policy1_from_tree(game, planner, tree)
             π2 = policy2_from_tree(game, planner, tree)
@@ -106,7 +106,7 @@ function exploit_p2_joint_policy(planner::AlphaZeroPlanner, game::MG)
     end |> FunctionBehavior
 end
 
-function sim_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; temperature=1.0, every=10, progress=true)
+function sim_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; ϵ=0.30, every=10, progress=true)
     tree = AZ.Tree(game, s)
     (;tree_queries) = params
     iter    = Int[]
@@ -115,7 +115,7 @@ function sim_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; te
     γ = discount(game)
     p = Progress(tree_queries; enabled=progress)
     for i ∈ 1:tree_queries
-        AZ.simulate(params, tree, game, 1; temperature)
+        AZ.simulate(params, tree, game, 1; ϵ)
         if iszero(mod(i, every))
             π1 = policy1_from_tree(game, planner, tree)
             π2 = policy2_from_tree(game, planner, tree)
