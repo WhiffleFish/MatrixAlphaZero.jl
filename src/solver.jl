@@ -1,7 +1,6 @@
 @kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, MP}
     max_iter        ::  Int     = 100
-    n_iter          ::  Int     = 200
-    steps_per_iter  ::  Int     = 50_000
+    steps_per_iter  ::  Int     = 100_000
     buff_cap        ::  Int     = 1_000_000
 
     # MCTS
@@ -9,12 +8,12 @@
     mcts_params     ::  MP      = MCTSParams(;oracle)
 
     # Training args
-    batchsize       ::  Int     = 128
+    batchsize       ::  Int     = 256
     lr              ::  Float32 = 3f-4
-    train_intensity ::  Int     = 6
-    ema_decay       ::  Float32 = 0f0
-    ema_selfplay    ::  Bool    = false
-    ema_callback    ::  Bool    = false
+    train_intensity ::  Int     = 1
+    ema_decay       ::  Float32 = 0.99f0
+    ema_selfplay    ::  Bool    = true
+    ema_callback    ::  Bool    = true
 
     optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(1f0),
@@ -49,7 +48,7 @@ function AlphaZeroPlanner(
         max_time        =   Inf,
         max_depth       =   typemax(Int),
         c               =   1.0,
-        matrix_solver   = RegretSolver(20)
+        matrix_solver   = RegretSolver(100)
     )
     return AlphaZeroPlanner(;
         game, 

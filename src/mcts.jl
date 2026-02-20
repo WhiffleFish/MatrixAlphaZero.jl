@@ -1,10 +1,10 @@
 @kwdef struct MCTSParams{E, Oracle, MS}
-    tree_queries    :: Int      = 10
+    tree_queries    :: Int      = 150
     c               :: Float64  = 1.0
-    max_depth       :: Int      = 100
+    max_depth       :: Int      = 50
     ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
     max_time        :: Float64  = Inf
-    matrix_solver   :: MS       = RegretSolver(20)
+    matrix_solver   :: MS       = RegretSolver(100)
     oracle          :: Oracle
     value_target    :: Symbol   = :search
 end
