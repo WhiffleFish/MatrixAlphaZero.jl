@@ -12,8 +12,6 @@
     lr              ::  Float32 = 3f-4
     train_intensity ::  Int     = 1
     ema_decay       ::  Float32 = 0.99f0
-    ema_selfplay    ::  Bool    = true
-    ema_callback    ::  Bool    = true
 
     optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(1f0),
@@ -115,8 +113,7 @@ MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     distributed = Distributed.nprocs() > 1
     online_oracle = sol.mcts_params.oracle
-    use_ema = sol.ema_decay > 0
-    ema_oracle = use_ema ? deepcopy(online_oracle) : online_oracle
+    ema_oracle = deepcopy(online_oracle)
     mcts_iter = max(1, sol.steps_per_iter ÷ sol.mcts_params.max_depth)
     total_iter = mcts_iter * sol.max_iter
     progress = Progress(total_iter, safe_lock=false)
@@ -125,11 +122,11 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     train_losses = Vector{Float32}[]
     value_losses = Vector{Float32}[]
     policy_losses = Vector{Float32}[]
-    cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+    cb_oracle = ema_oracle
     call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
     for i ∈ 1:sol.max_iter
         ϵ = sol.mcts_params.ϵ(i)
-        selfplay_oracle = (use_ema && sol.ema_selfplay) ? ema_oracle : online_oracle
+        selfplay_oracle = ema_oracle
         mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
         hists = if distributed
             distributed_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ)
@@ -141,18 +138,16 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
             push!(buf, hist)
         end
         train_info = train!(sol, online_oracle, buf; opt_state, steps_per_iter=samples_added)
-        if use_ema
-            ema_update!(ema_oracle, online_oracle, sol.ema_decay)
-        end
+        ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         push!(train_losses, train_info[:losses])
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])
-        cb_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+        cb_oracle = ema_oracle
         call(cb, (;oracle=cb_oracle, iter=i, online_oracle, ema_oracle))
         # decay!(sol.optimiser, 0.9)
     end
     finish!(progress)
-    planner_oracle = (use_ema && sol.ema_callback) ? ema_oracle : online_oracle
+    planner_oracle = ema_oracle
     planner = AlphaZeroPlanner(
         game, planner_oracle;
         max_iter      = sol.mcts_params.tree_queries,
