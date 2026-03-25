@@ -68,7 +68,6 @@ function Flux.loadmodel!(oracle::ActorCritic, path::String)
 end
 
 function load_oracle(path)
-    jldopen(joinpath(path, "oracle.jld2"))["oracle"]
     if isdir(path)
         return jldopen(joinpath(path, "oracle.jld2"))["oracle"]
     elseif isfile(path)
