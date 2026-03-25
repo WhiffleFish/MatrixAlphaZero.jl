@@ -37,9 +37,4 @@ export @modeldir, @model
 
 include("vis.jl")
 
-## Experimental
-include(joinpath("bounds", "bounds.jl"))
-using .Bounds
-
-
 end # module MatrixAlphaZero
