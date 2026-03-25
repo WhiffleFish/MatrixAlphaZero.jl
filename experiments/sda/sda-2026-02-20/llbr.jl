@@ -14,6 +14,7 @@ begin
     using POMDPs
     using ProgressMeter
     using Plots
+    using LaTeXStrings
     default(grid=false, framestyle=:box, fontfamily="Computer Modern", label="")
 end
 
@@ -60,7 +61,7 @@ plot(
         layout=(2,1)
     ),
     plot(-(getindex.(br_vals, 1) .+ getindex.(br_vals, 2)), xlabel="Training Iteration", ylabel="Exploitability", c=3),
-    suptitle = "Dubin Policy Network Performance",
+    suptitle = "SDA Policy Network Performance",
     layout = (1,2),
     lw=2
 )
@@ -68,4 +69,10 @@ plot(
 savefig(@figdir("sda-policy-network-performance.pdf"))
 ##
 
+using DelimitedFiles
 writedlm(joinpath(@__DIR__, "network_brvs.csv"), hcat(getindex.(br_vals, 1), getindex.(br_vals, 2)), ',')
+
+
+##
+using JLD2
+jldsave(joinpath(@__DIR__, "s0.jld2"); s0)
