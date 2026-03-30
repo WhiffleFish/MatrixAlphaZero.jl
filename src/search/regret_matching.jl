@@ -50,8 +50,12 @@ end
 function update_node!(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
     i, j = Tuple(a)
     q = node_matrix_game(tree, s_idx, γ)
-    tree.regret[1][s_idx] .+= view(q, :, j) .- total
-    tree.regret[2][s_idx] .+= total .- vec(view(q, i, :))
+    Δ1 = view(q, :, j) .- total
+    Δ1[i] = 0.0  # selected action contributes zero regret (paper: x(h,i,j)=u1 when (i,j) selected)
+    tree.regret[1][s_idx] .+= Δ1
+    Δ2 = total .- vec(view(q, i, :))
+    Δ2[j] = 0.0
+    tree.regret[2][s_idx] .+= Δ2
     tree.policy_sum[1][s_idx] .+= π1
     tree.policy_sum[2][s_idx] .+= π2
     return nothing
