@@ -29,10 +29,11 @@ function ema_update!(ema_model, model, decay::Real)
 end
 
 
-@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle, M} <: Policy
+@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle, M, SS<:AbstractSearchStyle} <: Policy
     game            ::  G
     oracle          ::  Oracle
     matrix_solver   ::  M
+    search_style    ::  SS
     max_iter        ::  Int
     max_time        ::  Float64
     max_depth       ::  Int
@@ -46,11 +47,13 @@ function AlphaZeroPlanner(
         max_time        =   Inf,
         max_depth       =   typemax(Int),
         c               =   1.0,
-        matrix_solver   = RegretSolver(100)
+        matrix_solver   = RegretSolver(100),
+        search_style    = MatrixGameSearch()
     )
     return AlphaZeroPlanner(;
         game, 
         oracle, 
+        search_style,
         max_iter, 
         max_time, 
         max_depth, 
@@ -84,6 +87,7 @@ AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
     max_depth       = sol.mcts_params.max_depth,
     c               = sol.mcts_params.c,
     matrix_solver   = sol.mcts_params.matrix_solver,
+    search_style    = sol.mcts_params.search_style,
     kwargs...
 )
 
@@ -97,13 +101,27 @@ AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
     max_depth       =   planner.max_depth,
     c               =   planner.c,
     matrix_solver   =   planner.matrix_solver,
+    search_style    =   planner.search_style,
     kwargs...
 )
 
+function MCTSParams(planner::AlphaZeroPlanner; kwargs...)
+    return MCTSParams(;
+        tree_queries = planner.max_iter,
+        c = planner.c,
+        max_depth = planner.max_depth,
+        max_time = planner.max_time,
+        matrix_solver = planner.matrix_solver,
+        search_style = planner.search_style,
+        oracle = planner.oracle,
+        kwargs...
+    )
+end
+
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
-    (;oracle, game, max_iter, max_time, max_depth, c, matrix_solver) = policy
+    (;oracle, game, max_iter, max_time, max_depth, c, matrix_solver, search_style) = policy
     A1, A2 = actions(game)
-    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c, matrix_solver), game, s)
+    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, c, matrix_solver, search_style), game, s)
     return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y)), (;info..., v)
 end
 
@@ -153,7 +171,8 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         max_time      = sol.mcts_params.max_time,
         max_depth     = sol.mcts_params.max_depth,
         c             = sol.mcts_params.c,
-        matrix_solver = sol.mcts_params.matrix_solver
+        matrix_solver = sol.mcts_params.matrix_solver,
+        search_style  = sol.mcts_params.search_style
     )
     return planner, (;
         train_losses, value_losses, policy_losses, buffer=buf
@@ -192,7 +211,7 @@ function oracle_matrix_game(game, oracle, s)
             a = (a1, a2)
             sp, r = @gen(:sp, :r)(game, s, a)
             vp = only(value(oracle, MarkovGames.convert_s(Vector{Float32}, sp, game)))
-            mat[i,j] = r + γ * vp
+            mat[i,j] = zs_reward_scalar(r) + γ * vp
         end
     end
     return mat

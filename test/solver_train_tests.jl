@@ -27,6 +27,19 @@ using Random
     @test params.c == 1.2
     @test AZ.with_oracle(params, :new_oracle).oracle == :new_oracle
 
+    rm_planner = AZ.AlphaZeroPlanner(
+        game,
+        oracle;
+        max_iter=2,
+        max_depth=4,
+        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        search_style=AZ.RegretMatchingSearch(backup=:mean),
+    )
+    rm_params = AZ.MCTSParams(rm_planner)
+    @test rm_planner.search_style isa AZ.RegretMatchingSearch
+    @test rm_params.search_style isa AZ.RegretMatchingSearch
+    @test AZ.with_oracle(rm_params, :new_oracle).search_style isa AZ.RegretMatchingSearch
+
     train_oracle = Fixtures.simple_actor_critic()
     solver = AZ.AlphaZeroSolver(
         max_iter=1,
@@ -38,7 +51,7 @@ using Random
         train_intensity=1,
         ema_decay=0.5f0,
     )
-    @test AZ.AlphaZeroPlanner(solver, game).max_iter == 0
+    @test iszero(AZ.AlphaZeroPlanner(solver, game).max_iter)
     @test AZ.AlphaZeroPlanner(game, solver).max_depth == 2
     @test AZ.AlphaZeroPlanner(planner; c=2.0).c == 2.0
 

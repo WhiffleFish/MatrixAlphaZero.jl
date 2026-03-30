@@ -97,4 +97,61 @@ using Random
         value_target=:bad,
     )
     @test_throws ArgumentError AZ.mcts_sim(bad_params, game, false; progress=false, ϵ=0.0)
+
+    bandit_oracle = Fixtures.TableOracle(
+        values=Dict(0f0 => 0f0, 1f0 => 0f0),
+        policies=Dict(0f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5])),
+    )
+
+    Random.seed!(1)
+    rm_params = AZ.MCTSParams(
+        tree_queries=400,
+        max_depth=4,
+        max_time=1.0,
+        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        oracle=bandit_oracle,
+        search_style=AZ.RegretMatchingSearch(),
+    )
+    (x_rm, y_rm, v_rm), rm_info = AZ.search_info(rm_params, game, false; ϵ=0.1)
+    @test x_rm[2] > x_rm[1]
+    @test y_rm[1] > y_rm[2]
+    @test v_rm > 0.6
+    @test rm_info.tree.return_sum[1] > 0.0
+
+    Random.seed!(1)
+    exp3_params = AZ.MCTSParams(
+        tree_queries=400,
+        max_depth=4,
+        max_time=1.0,
+        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        oracle=bandit_oracle,
+        search_style=AZ.Exp3Search(),
+    )
+    (x_exp3, y_exp3, v_exp3), exp3_info = AZ.search_info(exp3_params, game, false; ϵ=0.1)
+    @test x_exp3[2] > x_exp3[1]
+    @test y_exp3[1] > y_exp3[2]
+    @test v_exp3 > 0.6
+    @test exp3_info.tree.return_sum[1] > 0.0
+
+    step_oracle = Fixtures.TableOracle(
+        values=Dict(0f0 => 0f0, 1f0 => 0.5f0, 2f0 => 0f0),
+        policies=Dict(
+            0f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5]),
+            1f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5]),
+        ),
+    )
+    Random.seed!(2)
+    rm_mean_params = AZ.MCTSParams(
+        tree_queries=500,
+        max_depth=3,
+        max_time=1.0,
+        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        oracle=step_oracle,
+        search_style=AZ.RegretMatchingSearch(backup=:mean),
+    )
+    (x_rm_mean, y_rm_mean, v_rm_mean), rm_mean_info = AZ.search_info(rm_mean_params, Fixtures.TwoStepGame(), 0; ϵ=0.1)
+    @test x_rm_mean[1] > 0.9
+    @test y_rm_mean[1] > 0.9
+    @test isapprox(v_rm_mean, 1.25; atol=0.1)
+    @test isapprox(v_rm_mean, rm_mean_info.tree.return_sum[1] / rm_mean_info.tree.n_s[1]; atol=1e-6)
 end

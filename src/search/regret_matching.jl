@@ -1,0 +1,72 @@
+struct RegretMatchingTree{S} <: AbstractBanditTree
+    core        :: SearchTreeCore{S}
+    return_sum  :: Vector{Float64}
+    regret      :: NTuple{2, Vector{Vector{Float64}}}
+    policy_sum  :: NTuple{2, Vector{Vector{Float64}}}
+end
+
+function RegretMatchingTree(game::MG, s=rand(initialstate(game)))
+    return RegretMatchingTree(
+        SearchTreeCore(game, s),
+        [0.0],
+        ([NO_FLOAT], [NO_FLOAT]),
+        ([NO_FLOAT], [NO_FLOAT]),
+    )
+end
+
+Tree(::RegretMatchingSearch, game::MG, s=rand(initialstate(game))) = RegretMatchingTree(game, s)
+
+function reset_search_node!(tree::RegretMatchingTree, s_idx::Int, na1::Int, na2::Int)
+    tree.return_sum[s_idx] = 0.0
+    tree.regret[1][s_idx] = zeros(Float64, na1)
+    tree.regret[2][s_idx] = zeros(Float64, na2)
+    tree.policy_sum[1][s_idx] = zeros(Float64, na1)
+    tree.policy_sum[2][s_idx] = zeros(Float64, na2)
+    return nothing
+end
+
+function append_search_frontier!(tree::RegretMatchingTree, n_frontier::Int)
+    append!(tree.return_sum, fill(0.0, n_frontier))
+    foreach(tree.regret) do regret_i
+        append!(regret_i, fill(NO_FLOAT, n_frontier))
+    end
+    foreach(tree.policy_sum) do policy_i
+        append!(policy_i, fill(NO_FLOAT, n_frontier))
+    end
+    return nothing
+end
+
+function regret_matching_policy(regret::AbstractVector)
+    policy = zeros(Float64, length(regret))
+    return match!(policy, regret)
+end
+
+function selection_policy(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int; ϵ=0.30)
+    x = regret_matching_policy(tree.regret[1][s_idx])
+    y = regret_matching_policy(tree.regret[2][s_idx])
+    return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
+end
+
+function update_node!(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
+    i, j = Tuple(a)
+    q = node_matrix_game(tree, s_idx, γ)
+    tree.regret[1][s_idx] .+= view(q, :, j) .- total
+    tree.regret[2][s_idx] .+= total .- vec(view(q, i, :))
+    tree.policy_sum[1][s_idx] .+= π1
+    tree.policy_sum[2][s_idx] .+= π2
+    return nothing
+end
+
+function tree_policy(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int; ϵ=0.30)
+    if iszero(tree.n_s[s_idx]) || isempty(tree.r[s_idx])
+        return oracle_policy(params, game, tree, s_idx)
+    elseif style.target_policy == :average
+        x = normalize_or_uniform!(copy(tree.policy_sum[1][s_idx]))
+        y = normalize_or_uniform!(copy(tree.policy_sum[2][s_idx]))
+        return x, y
+    elseif style.target_policy == :empirical
+        return empirical_policy(tree, s_idx)
+    else
+        return selection_policy(style, tree, s_idx; ϵ)
+    end
+end

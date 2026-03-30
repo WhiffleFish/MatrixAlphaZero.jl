@@ -25,12 +25,10 @@ include("callbacks.jl")
 include("nn.jl")
 export ActorCritic, MultiActor
 
+include("search/search.jl")
+
 include("solver.jl")
 export AlphaZeroSolver, MCTSParams, AlphaZeroPlanner
-
-include("tree.jl")
-
-include("mcts.jl")
 
 include("train.jl")
 export @modeldir, @model

@@ -111,3 +111,13 @@ begin
     end
     display(heatmap(X,Y,V))
 end
+
+
+##
+using D3Trees
+actions(game)
+
+oracle = @model(100)
+planner = AlphaZeroPlanner(game, oracle, max_iter=1_000, c=10.0)
+b, info = behavior_info(planner, rand(initialstate(game)))
+D3Tree(info.tree)
