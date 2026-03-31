@@ -21,6 +21,9 @@ Useful `search_llbr.jl` flags:
 - `--every`
 - `--test`
 
+If `--checkpoint` is omitted, `search_llbr.jl` uses the latest checkpoint shared by
+all three style directories.
+
 The comparison script evaluates the same Dubin root state under:
 - `MatrixGameSearch()`
 - `RegretMatchingSearch()`
