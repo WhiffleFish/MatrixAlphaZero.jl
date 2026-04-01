@@ -9,7 +9,7 @@ Tree(::MatrixGameSearch, game::MG, s=rand(initialstate(game))) = MatrixGameTree(
 reset_search_node!(tree::MatrixGameTree, s_idx::Int, na1::Int, na2::Int) = nothing
 append_search_frontier!(tree::MatrixGameTree, n_frontier::Int) = nothing
 
-function simulate(::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
+function simulate(style::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
     γ = discount(game)
     s = tree.s[s_idx]
 
@@ -17,12 +17,12 @@ function simulate(::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, 
         return 0.0
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, params.oracle)
-        x, y, t = solve(params.matrix_solver, node_matrix_game(tree, params.c, s_idx, γ))
+        x, y, t = solve(style.matrix_solver, node_matrix_game(tree, style.c, s_idx, γ))
         return t
     else
-        a = explore_action(params.matrix_solver, tree, params.c, s_idx, γ; ϵ)
+        a = explore_action(style.matrix_solver, tree, style.c, s_idx, γ; ϵ)
         sp_idx = tree.s_children[s_idx][a]
-        vp = simulate(MatrixGameSearch(), params, tree, game, sp_idx, depth + 1; ϵ)
+        vp = simulate(style, params, tree, game, sp_idx, depth + 1; ϵ)
 
         v̂ = tree.v[s_idx][a]
         nsa = tree.n_sa[s_idx][a]
@@ -30,14 +30,14 @@ function simulate(::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, 
         tree.n_s[s_idx] += 1
         tree.n_sa[s_idx][a] += 1
 
-        x, y, t = solve(params.matrix_solver, node_matrix_game(tree, params.c, s_idx, γ))
+        x, y, t = solve(style.matrix_solver, node_matrix_game(tree, style.c, s_idx, γ))
         return t
     end
 end
 
-function tree_policy(::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, game::MG, s_idx::Int; ϵ=0.30)
+function tree_policy(style::MatrixGameSearch, params::MCTSParams, tree::MatrixGameTree, game::MG, s_idx::Int; ϵ=0.30)
     γ = discount(game)
-    x, y, _ = solve(params.matrix_solver, node_matrix_game(tree, params.c, s_idx, γ))
+    x, y, _ = solve(style.matrix_solver, node_matrix_game(tree, style.c, s_idx, γ))
     return x, y
 end
 

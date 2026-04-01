@@ -46,10 +46,9 @@ using Random
 
     params = AZ.MCTSParams(
         tree_queries=1,
-        c=0.5,
         max_depth=2,
         max_time=1.0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        search_style=AZ.MatrixGameSearch(c=0.5, matrix_solver=Fixtures.GreedyMatrixSolver()),
         oracle=oracle,
     )
     (x, y, v), info = AZ.search_info(params, game, false; ϵ=0.0)
@@ -79,10 +78,9 @@ using Random
     )
     rollout_params = AZ.MCTSParams(
         tree_queries=0,
-        c=0.5,
         max_depth=2,
         max_time=1.0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        search_style=AZ.MatrixGameSearch(c=0.5, matrix_solver=Fixtures.GreedyMatrixSolver()),
         oracle=rollout_oracle,
         value_target=:rollout,
     )
@@ -92,7 +90,7 @@ using Random
 
     bad_params = AZ.MCTSParams(
         tree_queries=0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
+        search_style=AZ.MatrixGameSearch(matrix_solver=Fixtures.GreedyMatrixSolver()),
         oracle=oracle,
         value_target=:bad,
     )
@@ -108,7 +106,6 @@ using Random
         tree_queries=400,
         max_depth=4,
         max_time=1.0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
         oracle=bandit_oracle,
         search_style=AZ.RegretMatchingSearch(),
     )
@@ -123,7 +120,6 @@ using Random
         tree_queries=400,
         max_depth=4,
         max_time=1.0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
         oracle=bandit_oracle,
         search_style=AZ.Exp3Search(),
     )
@@ -145,7 +141,6 @@ using Random
         tree_queries=500,
         max_depth=3,
         max_time=1.0,
-        matrix_solver=Fixtures.GreedyMatrixSolver(),
         oracle=step_oracle,
         search_style=AZ.RegretMatchingSearch(backup=:mean),
     )

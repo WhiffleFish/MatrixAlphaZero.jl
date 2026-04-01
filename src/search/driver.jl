@@ -1,10 +1,14 @@
+function zero_query_search(style::MatrixGameSearch, oracle, game, s)
+    return solve(style.matrix_solver, oracle_matrix_game(game, oracle, s))
+end
+
 function search_info(params::MCTSParams, game::MG, s; ϵ=0.30)
     tree = Tree(params, game, s)
     x, y, v = if isterminal(game, s)
         n1, n2 = length.(actions(game))
         uniform(n1), uniform(n2), 0.0
     elseif iszero(params.max_depth) || iszero(params.tree_queries) || iszero(params.max_time)
-        solve(params.matrix_solver, oracle_matrix_game(game, params.oracle, s))
+        zero_query_search(params.search_style, params.oracle, game, s)
     else
         for _ ∈ 1:params.tree_queries
             simulate(params, tree, game, 1; ϵ)

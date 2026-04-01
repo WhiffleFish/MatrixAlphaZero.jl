@@ -2,7 +2,14 @@ abstract type AbstractSearchStyle end
 abstract type AbstractSearchTree end
 abstract type AbstractBanditTree <: AbstractSearchTree end
 
-struct MatrixGameSearch <: AbstractSearchStyle end
+struct MatrixGameSearch{MS} <: AbstractSearchStyle
+    c             :: Float64
+    matrix_solver :: MS
+end
+
+function MatrixGameSearch(; c::Real=1.0, matrix_solver=RegretSolver(100))
+    return MatrixGameSearch(Float64(c), matrix_solver)
+end
 
 struct RegretMatchingSearch <: AbstractSearchStyle
     backup::Symbol
@@ -28,13 +35,11 @@ function Exp3Search(; backup::Symbol=:sample, target_policy::Symbol=:empirical, 
     return Exp3Search(backup, target_policy, Float64(η))
 end
 
-@kwdef struct MCTSParams{E, Oracle, MS, SS<:AbstractSearchStyle}
+@kwdef struct MCTSParams{E, Oracle, SS<:AbstractSearchStyle}
     tree_queries    :: Int      = 150
-    c               :: Float64  = 1.0
     max_depth       :: Int      = 50
     ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
     max_time        :: Float64  = Inf
-    matrix_solver   :: MS       = RegretSolver(100)
     search_style    :: SS       = MatrixGameSearch()
     oracle          :: Oracle
     value_target    :: Symbol   = :search
@@ -43,11 +48,9 @@ end
 function with_oracle(params::MCTSParams, oracle)
     return MCTSParams(;
         tree_queries = params.tree_queries,
-        c = params.c,
         max_depth = params.max_depth,
         ϵ = params.ϵ,
         max_time = params.max_time,
-        matrix_solver = params.matrix_solver,
         search_style = params.search_style,
         oracle,
         value_target = params.value_target
