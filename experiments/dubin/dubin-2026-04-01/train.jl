@@ -5,6 +5,7 @@ using Distributed
 using JLD2
 using ExperimentTools
 using MatrixAlphaZero
+using MarkovGames
 using Random
 
 const AZ = MatrixAlphaZero
@@ -89,8 +90,34 @@ for spec in STYLE_SPECS
         ),
     )
 
-    cb = AZ.ModelSaveCallback(models_dir)
+    wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
+        WandbCallback(
+            project = "Matrix AlphaZero",
+            name    = "dubin-$(spec.name)",
+            config  = Dict(
+                "search_style"   => spec.name,
+                "tree_queries"   => tree_queries,
+                "max_depth"      => max_depth,
+                "steps_per_iter" => steps_per_iter,
+                "iter"           => iter,
+                "width"          => width,
+                "lr"             => lr,
+                "ema_decay"      => ema_decay,
+            ),
+        )
+    else
+        @warn "WANDB_API_KEY not set — skipping W&B logging for $(spec.name)"
+        nothing
+    end
+
+    cb = if isnothing(wandb_cb)
+        (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback())
+    else
+        (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback(), wandb_cb)
+    end
+
     _, info = solve(sol, game; s0 = Deterministic(s0), cb)
+    isnothing(wandb_cb) || close(wandb_cb)
     JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
 end
 
