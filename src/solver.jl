@@ -127,6 +127,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     train_losses = Vector{Float32}[]
     value_losses = Vector{Float32}[]
     policy_losses = Vector{Float32}[]
+    prev_ema_oracle = deepcopy(ema_oracle)
     cb_oracle = ema_oracle
     call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
     for i ∈ 1:sol.max_iter
@@ -148,7 +149,15 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])
         cb_oracle = ema_oracle
-        call(cb, (;oracle=cb_oracle, iter=i, online_oracle, ema_oracle))
+        cb_info = merge(
+            (oracle=cb_oracle, iter=i, online_oracle, ema_oracle),
+            selfplay_metrics(hists),
+            training_metrics(train_info),
+            buffer_metrics(buf, samples_added, sol.buff_cap),
+            oracle_metrics(ema_oracle, prev_ema_oracle, buf),
+        )
+        call(cb, cb_info)
+        prev_ema_oracle = deepcopy(ema_oracle)
         # decay!(sol.optimiser, 0.9)
     end
     finish!(progress)

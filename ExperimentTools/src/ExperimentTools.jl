@@ -20,6 +20,7 @@ using SDAGames.SatelliteDynamics
 using LinearAlgebra
 using Base.Threads
 using ProgressMeter
+using Wandb
 
 include("helpers.jl")
 export @figdir
@@ -39,6 +40,9 @@ include("simple.jl")
 include("sda.jl")
 
 include("llbr.jl")
+
+include("wandb_callback.jl")
+export WandbCallback
 
 
 end # module ExperimentTools

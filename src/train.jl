@@ -13,6 +13,7 @@ function train!(
     losses = Float32[]
     value_losses = Float32[]
     policy_losses = Float32[]
+    grad_norms = Float32[]
     for _ in 1:n_batches
         X, v_target, p_target = get_batch(buf, batchsize)
         v_target = prepare_target(oracle.critic, v_target)
@@ -27,9 +28,11 @@ function train!(
             end
             return l
         end
+        gn = sqrt(mapreduce(g -> isnothing(g) ? 0f0 : sum(abs2, g), +, Flux.trainables(∇θ[1]); init=0f0))
+        push!(grad_norms, gn)
         Flux.update!(opt_state, oracle, ∇θ[1])
     end
-    return (; losses, value_losses, policy_losses)
+    return (; losses, value_losses, policy_losses, grad_norms)
 end
 
 l2_penalty(x::AbstractArray) = sum(abs2, x) / length(x)

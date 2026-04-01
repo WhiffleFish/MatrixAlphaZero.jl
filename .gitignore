@@ -8,3 +8,9 @@ scratch
 *.pdf
 *.gif
 *.svg
+
+# wandb local run cache
+wandb/
+
+# CondaPkg managed Python environment
+.CondaPkg/

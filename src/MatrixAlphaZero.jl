@@ -20,7 +20,11 @@ export PATHSolver, RegretSolver
 
 include("buffer.jl")
 
+include("metrics.jl")
+export selfplay_metrics, training_metrics, buffer_metrics, oracle_metrics
+
 include("callbacks.jl")
+export MetricsCallback
 
 include("nn.jl")
 export ActorCritic, MultiActor
