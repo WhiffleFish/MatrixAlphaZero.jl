@@ -21,6 +21,7 @@ using LinearAlgebra
 using Base.Threads
 using ProgressMeter
 using Wandb
+using PythonCall
 
 include("helpers.jl")
 export @figdir
@@ -42,7 +43,7 @@ include("sda.jl")
 include("llbr.jl")
 
 include("wandb_callback.jl")
-export WandbCallback
+export WandbCallback, WandbRun, fetch_wandb_runs
 
 
 end # module ExperimentTools

@@ -12,12 +12,13 @@ POMDPTools = "7588e00f-9cae-40de-98dc-e0c70c48cdd7"
 POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
 POSGModels = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 
 [sources]
-MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
 ExperimentTools = {path = "../ExperimentTools"}
-MatrixAlphaZero = {path = ".."}
 FictitiousPlay = {url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
+MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
+MatrixAlphaZero = {path = ".."}
 POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
 SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}

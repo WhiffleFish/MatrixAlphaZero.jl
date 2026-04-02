@@ -24,7 +24,7 @@ function (cb::MetricsCallback)(info::NamedTuple)
     println(bar)
     println("  iter $(info.iter)")
     if hasproperty(info, :mean_loss)
-        println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  policy=$(_r(info.mean_policy_loss))  v/p=$(_r2(info.value_policy_ratio))")
+        println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  policy=$(_r(info.mean_policy_loss))")
     end
     if hasproperty(info, :mean_grad_norm)
         println("  grad norm:   mean=$(_r3(info.mean_grad_norm))  max=$(_r3(info.max_grad_norm))")

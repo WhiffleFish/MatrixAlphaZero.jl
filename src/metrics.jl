@@ -6,6 +6,17 @@ end
 policy_entropy(p::AbstractVector{<:Real}) = -sum(x -> iszero(x) ? zero(x) : x * log(x), p)
 policy_entropy(policies::AbstractVector{<:AbstractVector}) = mean(policy_entropy, policies)
 
+"""
+    selfplay_metrics(hists) -> NamedTuple
+
+Aggregate statistics over the self-play trajectories collected in one training iteration.
+
+| Field            | Description                                                  |
+|:-----------------|:-------------------------------------------------------------|
+| `mean_ep_length` | Mean number of steps per episode across all rollouts.        |
+| `mean_reward`    | Mean per-step reward pooled across all steps and episodes.   |
+| `reward_std`     | Standard deviation of per-step rewards (spread of outcomes). |
+"""
 function selfplay_metrics(hists)
     ep_lengths = map(h -> length(h.v), hists)
     rewards = mapreduce(h -> h.r, vcat, hists)
@@ -16,19 +27,42 @@ function selfplay_metrics(hists)
     )
 end
 
+"""
+    training_metrics(train_info) -> NamedTuple
+
+Aggregate statistics over the gradient update steps within one training iteration.
+
+| Field            | Description                                                                           |
+|:-----------------|:--------------------------------------------------------------------------------------|
+| `mean_loss`      | Mean total loss (value + policy + L2 regularisation) across all mini-batches.         |
+| `mean_value_loss`| Mean value head loss (Huber or cross-entropy depending on critic type).               |
+| `mean_policy_loss`| Mean policy head loss (cross-entropy against search-backed policy targets).          |
+| `mean_grad_norm` | Mean ℓ₂ norm of the gradient vector **before** the optimiser clips it. A sustained   |
+|                  | rise signals instability; zero means the network has stopped learning.                |
+| `max_grad_norm`  | Maximum gradient norm seen across all mini-batches in the iteration. Useful for       |
+|                  | detecting isolated spikes that the mean would smooth over.                            |
+"""
 function training_metrics(train_info)
-    lv = Float32(mean(train_info[:value_losses]))
-    lp = Float32(mean(train_info[:policy_losses]))
     return (;
-        mean_loss          = Float32(mean(train_info[:losses])),
-        mean_value_loss    = lv,
-        mean_policy_loss   = lp,
-        value_policy_ratio = lv / (lp + eps(Float32)),
-        mean_grad_norm     = Float32(mean(train_info[:grad_norms])),
-        max_grad_norm      = Float32(maximum(train_info[:grad_norms])),
+        mean_loss         = Float32(mean(train_info[:losses])),
+        mean_value_loss   = Float32(mean(train_info[:value_losses])),
+        mean_policy_loss  = Float32(mean(train_info[:policy_losses])),
+        mean_grad_norm    = Float32(mean(train_info[:grad_norms])),
+        max_grad_norm     = Float32(maximum(train_info[:grad_norms])),
     )
 end
 
+"""
+    buffer_metrics(buf, samples_added, capacity) -> NamedTuple
+
+Replay buffer occupancy and throughput for the current iteration.
+
+| Field             | Description                                                                      |
+|:------------------|:---------------------------------------------------------------------------------|
+| `buffer_size`     | Total number of transitions currently stored in the buffer.                      |
+| `buffer_turnover` | Fraction of the buffer capacity written this iteration (`samples_added/capacity`).|
+|                   | Near 0 → buffer is filling slowly; near 1 → almost the whole buffer was replaced.|
+"""
 function buffer_metrics(buf::Buffer, samples_added::Int, capacity::Int)
     return (;
         buffer_size     = length(buf),
@@ -36,8 +70,30 @@ function buffer_metrics(buf::Buffer, samples_added::Int, capacity::Int)
     )
 end
 
-# Computes oracle-based metrics using a random sample from the buffer.
-# Requires oracle to support policy(oracle, X) and value(oracle, X) with batched input.
+"""
+    oracle_metrics(oracle, prev_oracle, buf; n_samples=128) -> NamedTuple
+
+Oracle quality metrics estimated from a random sample of `n_samples` transitions in the
+replay buffer. Requires the oracle to support batched `policy(oracle, X)` and
+`value(oracle, X)` calls (satisfied by `ActorCritic`).
+
+| Field                | Description                                                                    |
+|:---------------------|:-------------------------------------------------------------------------------|
+| `policy_entropy_p1/2`| Shannon entropy of the search-backed policy targets stored in the buffer,      |
+|                      | averaged over all buffer entries. High entropy = exploring broadly;            |
+|                      | collapsing entropy = converging (or mode-collapsing) to a near-deterministic   |
+|                      | policy.                                                                        |
+| `policy_kl_p1/2`     | KL divergence D(oracle_cur ‖ oracle_prev) at the sampled states. Measures how  |
+|                      | much the EMA oracle's policy distribution shifted this iteration. Large values |
+|                      | relative to `policy_entropy` suggest the oracle is changing faster than the    |
+|                      | data distribution.                                                             |
+| `search_oracle_kl_p1/2` | KL divergence D(oracle_cur ‖ search_target) at the sampled states. Measures|
+|                      | how far the oracle's current predictions are from the search-backed targets it |
+|                      | was trained on. A rising value means the oracle is drifting away from what the |
+|                      | search found, which can signal overfitting to stale data or training instability.|
+| `value_pred_mse`     | Mean squared error between the oracle's value predictions and the value targets |
+|                      | stored in the buffer. Directly measures value head accuracy on replay data.    |
+"""
 function oracle_metrics(oracle, prev_oracle, buf::Buffer; n_samples::Int=128)
     iszero(length(buf)) && return (;
         policy_entropy_p1   = NaN32, policy_entropy_p2   = NaN32,
