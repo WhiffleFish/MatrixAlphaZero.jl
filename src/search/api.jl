@@ -23,16 +23,23 @@ function RegretMatchingSearch(; backup::Symbol=:sample, target_policy::Symbol=:a
 end
 
 struct Exp3Search <: AbstractSearchStyle
-    backup::Symbol
-    target_policy::Symbol
-    η::Float64
+    backup       :: Symbol
+    target_policy:: Symbol
+    η            :: Float64
+    max_weight   :: Float64  # clip importance weights 1/π[i] to this value
 end
 
-function Exp3Search(; backup::Symbol=:sample, target_policy::Symbol=:empirical, η::Real=NaN)
+function Exp3Search(;
+        backup::Symbol       = :mean,
+        target_policy::Symbol= :empirical,
+        η::Real              = 0.01,
+        max_weight::Real     = 10.0,
+    )
     backup ∈ (:sample, :mean) || throw(ArgumentError("Unsupported backup=$(backup). Use :sample or :mean."))
     target_policy ∈ (:empirical, :current) || throw(ArgumentError("Unsupported target_policy=$(target_policy). Use :empirical or :current."))
-    (isnan(η) || η > 0) || throw(ArgumentError("η must be positive when provided."))
-    return Exp3Search(backup, target_policy, Float64(η))
+    η > 0 || throw(ArgumentError("η must be positive."))
+    max_weight > 0 || throw(ArgumentError("max_weight must be positive."))
+    return Exp3Search(backup, target_policy, Float64(η), Float64(max_weight))
 end
 
 @kwdef struct MCTSParams{E, Oracle, SS<:AbstractSearchStyle}

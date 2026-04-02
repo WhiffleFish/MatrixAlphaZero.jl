@@ -10,6 +10,7 @@
     # Training args
     batchsize       ::  Int     = 256
     lr              ::  Float32 = 3f-4
+    lr_decay        ::  Float32 = 1.0f0  # multiplicative LR factor applied each iteration (1 = no decay)
     train_intensity ::  Int     = 1
     ema_decay       ::  Float32 = 0.99f0
 
@@ -145,6 +146,9 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         end
         train_info = train!(sol, online_oracle, buf; opt_state, steps_per_iter=samples_added)
         ema_update!(ema_oracle, online_oracle, sol.ema_decay)
+        if sol.lr_decay < 1f0
+            Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ i)
+        end
         push!(train_losses, train_info[:losses])
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])

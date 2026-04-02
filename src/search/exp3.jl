@@ -31,9 +31,8 @@ end
 
 function exp3_policy(reward::AbstractVector, style::Exp3Search; ϵ=0.30)
     n = length(reward)
-    η = isnan(style.η) ? max(ϵ, inv(n)) / n : style.η
     shifted = reward .- maximum(reward)
-    logits = exp.(η .* shifted)
+    logits = exp.(style.η .* shifted)
     normalize_or_uniform!(logits)
     return eps_exploration(logits, ϵ)
 end
@@ -44,10 +43,12 @@ function selection_policy(style::Exp3Search, tree::Exp3Tree, s_idx::Int; ϵ=0.30
     return x, y
 end
 
-function update_node!(::Exp3Search, tree::Exp3Tree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
+function update_node!(style::Exp3Search, tree::Exp3Tree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
     i, j = Tuple(a)
-    tree.reward_sum[1][s_idx][i] += total / max(π1[i], eps(Float64))
-    tree.reward_sum[2][s_idx][j] += (-total) / max(π2[j], eps(Float64))
+    w1 = min(inv(max(π1[i], eps(Float64))), style.max_weight)
+    w2 = min(inv(max(π2[j], eps(Float64))), style.max_weight)
+    tree.reward_sum[1][s_idx][i] +=   total * w1
+    tree.reward_sum[2][s_idx][j] += (-total) * w2
     return nothing
 end
 
