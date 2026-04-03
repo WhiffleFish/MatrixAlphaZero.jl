@@ -96,7 +96,7 @@ for spec in STYLE_SPECS
         WandbCallback(
             project = "Matrix AlphaZero",
             name    = "dubin-$(spec.name)",
-            group   = "dubin-2026-04-01",
+            group   = "dubin-2026-04-02",
             config  = Dict(
                 "search_style"   => spec.name,
                 "tree_queries"   => tree_queries,

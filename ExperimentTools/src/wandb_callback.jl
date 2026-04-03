@@ -2,8 +2,8 @@ struct WandbCallback
     logger::WandbLogger
 end
 
-function WandbCallback(; project::String, name::Union{String,Nothing}=nothing, config::AbstractDict=Dict{String,Any}())
-    return WandbCallback(WandbLogger(; project, name, config))
+function WandbCallback(; project::String, name::Union{String,Nothing}=nothing, group::Union{String,Nothing}=nothing, config::AbstractDict=Dict{String,Any}())
+    return WandbCallback(WandbLogger(; project, name, group, config))
 end
 
 function (cb::WandbCallback)(info::NamedTuple)
