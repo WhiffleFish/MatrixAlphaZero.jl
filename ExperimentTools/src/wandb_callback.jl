@@ -38,13 +38,14 @@ Holds the data for a single W&B run returned by [`fetch_wandb_runs`](@ref).
 struct WandbRun
     id      :: String
     name    :: String
+    group   :: String
     state   :: String
     config  :: Dict{String, Any}
     metrics :: Dict{String, Vector{Float64}}
 end
 
 Base.show(io::IO, r::WandbRun) =
-    print(io, "WandbRun(\"$(r.name)\", state=$(r.state), metrics=$(sort(collect(keys(r.metrics)))))")
+    print(io, "WandbRun(\"$(r.name)\", group=$(r.group), state=$(r.state), metrics=$(sort(collect(keys(r.metrics)))))")
 
 """
     fetch_wandb_runs(project; entity=nothing, filters=Dict()) -> Vector{WandbRun}
@@ -104,11 +105,19 @@ function fetch_wandb_runs(
             for col in cols
         )
 
+        # run.config is a W&B Config object (dict subclass); pyconvert needs a
+        # plain Python dict, otherwise it silently produces an empty Julia dict.
+        config_dict = PythonCall.pydict(run.config)
+
+        # group is a top-level run attribute (not inside config); may be None.
+        group_str = something(PythonCall.pyconvert(Union{Nothing, String}, run.group), "")
+
         WandbRun(
             PythonCall.pyconvert(String, run.id),
             PythonCall.pyconvert(String, run.name),
+            group_str,
             PythonCall.pyconvert(String, run.state),
-            PythonCall.pyconvert(Dict{String, Any}, run.config),
+            PythonCall.pyconvert(Dict{String, Any}, config_dict),
             metrics,
         )
     end

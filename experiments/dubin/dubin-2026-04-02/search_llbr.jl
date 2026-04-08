@@ -17,9 +17,9 @@ const STYLE_SPECS = (
 
 args = ExperimentTools.parse_commandline(
     tree_queries = 1_000,
-    runs = 48,
-    checkpoint = 0,
-    every = 50,
+    runs = 100,
+    checkpoint = 100,
+    every = 1,
 )
 
 function available_checkpoints(style_name::String)

@@ -35,55 +35,48 @@ function style_summary(style_name::String)
     return (; data.iter, μ1, σ1, μ2, σ2, μv, σv, μexp, σexp)
 end
 
-function main()
-    summaries = Dict(style_name => style_summary(style_name) for (style_name, _, _) in STYLE_ORDER)
 
-    p_brv1 = plot(
-        xlabel = "Search Iterations",
-        ylabel = L"U^1(\pi^1, \mathbf{BR}(\pi^1))",
-        legend = :topright,
-    )
-    p_brv2 = plot(
-        xlabel = "Search Iterations",
-        ylabel = L"U^2(\mathbf{BR}(\pi^2), \pi^2)",
-        legend = :topright,
-    )
-    p_exp = plot(
-        xlabel = "Search Iterations",
-        ylabel = "Exploitability",
-        legend = :topright,
-    )
-    p_val = plot(
-        xlabel = "Search Iterations",
-        ylabel = "Root Value",
-        legend = :topright,
-    )
+summaries = Dict(style_name => style_summary(style_name) for (style_name, _, _) in STYLE_ORDER)
 
-    for (style_name, style_label, color) in STYLE_ORDER
-        summary = summaries[style_name]
-        plot!(p_brv1, summary.iter, summary.μ1; ribbon = summary.σ1, lw = 2, c = color, label = style_label)
-        plot!(p_brv2, summary.iter, summary.μ2; ribbon = summary.σ2, lw = 2, c = color, label = style_label)
-        plot!(p_exp, summary.iter, summary.μexp; ribbon = summary.σexp, lw = 2, c = color, label = style_label)
-        plot!(p_val, summary.iter, summary.μv; ribbon = summary.σv, lw = 2, c = color, label = style_label)
-    end
+p_brv1 = plot(
+    xlabel = "Search Iterations",
+    ylabel = L"U^1(\pi^1, \mathbf{BR}(\pi^1))",
+    legend = :topright,
+)
+p_brv2 = plot(
+    xlabel = "Search Iterations",
+    ylabel = L"U^2(\mathbf{BR}(\pi^2), \pi^2)",
+    legend = :topright,
+)
+p_exp = plot(
+    xlabel = "Search Iterations",
+    ylabel = "Exploitability",
+    legend = :topright,
+)
+p_val = plot(
+    xlabel = "Search Iterations",
+    ylabel = "Root Value",
+    legend = :topright,
+)
 
-    fig = plot(
-        p_brv1,
-        p_brv2,
-        p_exp,
-        p_val;
-        layout = (2, 2),
-        size = (1000, 800),
-        suptitle = "Dubin Search Style Comparison",
-    )
-
-    savefig(fig, joinpath(EXPERIMENT_DIR, "dubin-search-style-comparison.pdf"))
-    savefig(fig, joinpath(EXPERIMENT_DIR, "dubin-search-style-comparison.png"))
+for (style_name, style_label, color) in STYLE_ORDER
+    summary = summaries[style_name]
+    plot!(p_brv1, summary.iter, summary.μ1; ribbon = summary.σ1, lw = 2, c = color, label = style_label)
+    plot!(p_brv2, summary.iter, summary.μ2; ribbon = summary.σ2, lw = 2, c = color, label = style_label)
+    plot!(p_exp, summary.iter, summary.μexp; ribbon = summary.σexp, lw = 2, c = color, label = style_label)
+    plot!(p_val, summary.iter, summary.μv; ribbon = summary.σv, lw = 2, c = color, label = style_label)
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+fig = plot(
+    p_brv1,
+    p_brv2,
+    p_exp,
+    p_val;
+    layout = (2, 2),
+    size = (1000, 800),
+    suptitle = "Dubin Search Style Comparison",
+)
 
+savefig(fig, joinpath(EXPERIMENT_DIR, "figures", "dubin-search-style-comparison.pdf"))
+savefig(fig, joinpath(EXPERIMENT_DIR, "figures", "dubin-search-style-comparison.png"))
 
-main()

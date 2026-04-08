@@ -8,10 +8,14 @@ get(ENV, "WANDB_API_KEY", "") != "" || error(
     "WANDB_API_KEY not set — export it before running this script."
 )
 
-println("Fetching runs from W&B…")
-runs = fetch_wandb_runs("Matrix AlphaZero")
-isempty(runs) && error("No runs found in project 'Matrix AlphaZero'.")
-println("Found $(length(runs)) run(s)\n")
+const GROUP = "dubin-2026-04-02"
+const GROUP = "dubin-2026-04-02"
+
+println("Fetching runs from W&B (group=$(GROUP))…")
+all_runs = fetch_wandb_runs("Matrix AlphaZero")
+runs = filter(r -> r.group == GROUP, all_runs)
+isempty(runs) && error("No runs found in group '$(GROUP)'. ($(length(all_runs)) total runs in project.)")
+println("Found $(length(runs)) run(s) in group '$(GROUP)'\n")
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
