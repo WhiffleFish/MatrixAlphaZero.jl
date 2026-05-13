@@ -1,22 +1,4 @@
-struct RegretMatchingTree{S} <: AbstractBanditTree
-    core        :: SearchTreeCore{S}
-    return_sum  :: Vector{Float64}
-    regret      :: NTuple{2, Vector{Vector{Float64}}}
-    policy_sum  :: NTuple{2, Vector{Vector{Float64}}}
-end
-
-function RegretMatchingTree(game::MG, s=rand(initialstate(game)))
-    return RegretMatchingTree(
-        SearchTreeCore(game, s),
-        [0.0],
-        ([NO_FLOAT], [NO_FLOAT]),
-        ([NO_FLOAT], [NO_FLOAT]),
-    )
-end
-
-Tree(::RegretMatchingSearch, game::MG, s=rand(initialstate(game))) = RegretMatchingTree(game, s)
-
-function reset_search_node!(tree::RegretMatchingTree, s_idx::Int, na1::Int, na2::Int)
+function reset_search_node!(tree::SearchTree, s_idx::Int, na1::Int, na2::Int)
     tree.return_sum[s_idx] = 0.0
     tree.regret[1][s_idx] = zeros(Float64, na1)
     tree.regret[2][s_idx] = zeros(Float64, na2)
@@ -25,7 +7,7 @@ function reset_search_node!(tree::RegretMatchingTree, s_idx::Int, na1::Int, na2:
     return nothing
 end
 
-function append_search_frontier!(tree::RegretMatchingTree, n_frontier::Int)
+function append_search_frontier!(tree::SearchTree, n_frontier::Int)
     append!(tree.return_sum, fill(0.0, n_frontier))
     foreach(tree.regret) do regret_i
         append!(regret_i, fill(NO_FLOAT, n_frontier))
@@ -41,13 +23,13 @@ function regret_matching_policy(regret::AbstractVector)
     return match!(policy, regret)
 end
 
-function selection_policy(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int; ϵ=0.30)
+function selection_policy(::RegretMatchingSearch, tree::SearchTree, s_idx::Int; ϵ=0.30)
     x = regret_matching_policy(tree.regret[1][s_idx])
     y = regret_matching_policy(tree.regret[2][s_idx])
     return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
 end
 
-function update_node!(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
+function update_node!(::RegretMatchingSearch, tree::SearchTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
     i, j = Tuple(a)
     q = node_matrix_game(tree, s_idx, γ)
     Δ1 = view(q, :, j) .- total
@@ -61,7 +43,7 @@ function update_node!(::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::I
     return nothing
 end
 
-function tree_policy(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int; ϵ=0.30)
+function tree_policy(style::RegretMatchingSearch, params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int; ϵ=0.30)
     if iszero(tree.n_s[s_idx]) || isempty(tree.r[s_idx])
         return oracle_policy(params, game, tree, s_idx)
     end

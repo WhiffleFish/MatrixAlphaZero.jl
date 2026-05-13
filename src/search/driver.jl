@@ -23,15 +23,15 @@ function search(params::MCTSParams, game::MG, s; ϵ=0.30)
     return first(search_info(params, game, s; ϵ))
 end
 
-function simulate(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_idx; ϵ=0.30)
+function simulate(params::MCTSParams, tree::SearchTree, game::MG, s_idx; ϵ=0.30)
     return simulate(params.search_style, params, tree, game, s_idx, 0; ϵ)
 end
 
-function simulate(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
+function simulate(style::RegretMatchingSearch, params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
     return simulate_regret_matching(style, params, tree, game, s_idx, depth; ϵ)
 end
 
-function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
+function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
     s = tree.s[s_idx]
     if isterminal(game, s)
         return 0.0
@@ -66,32 +66,30 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSParam
     end
 end
 
-function search_result(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_idx::Int; ϵ=0.30)
+function search_result(params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int; ϵ=0.30)
     x, y = tree_policy(params, tree, game, s_idx; ϵ)
     v = node_value(params, tree, game, s_idx, x, y)
     return x, y, v
 end
 
-function tree_policy(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_idx::Int; ϵ=0.30)
+function tree_policy(params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int; ϵ=0.30)
     return tree_policy(params.search_style, params, tree, game, s_idx; ϵ)
 end
 
-function node_value(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_idx::Int, x, y)
+function node_value(params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int, x, y)
     return node_value(params.search_style, params, tree, game, s_idx, x, y)
 end
 
-function node_value(::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, x, y)
+function node_value(::RegretMatchingSearch, params::MCTSParams, tree::SearchTree, game::MG, s_idx::Int, x, y)
     if iszero(tree.n_s[s_idx])
         return oracle_state_value(params.oracle, game, tree.s[s_idx])
     end
     return node_return_sum(tree, s_idx) / tree.n_s[s_idx]
 end
 
-function backup_value(style::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int, sample_value::Float64)
+function backup_value(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int, sample_value::Float64)
     return style.backup == :mean ? node_return_sum(tree, s_idx) / tree.n_s[s_idx] : sample_value
 end
-
-root_policy(style::AbstractSearchStyle, x, y, ϵ::Real) = (x, y)
 
 function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
     d = params.max_depth
@@ -114,7 +112,6 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
 
     while (t < d) && !isterminal(game, s)
         x, y, gv = search(params, game, s; ϵ)
-        x, y = root_policy(params.search_style, x, y, ϵ)
 
         a_idxs = Tuple(action_idx_from_probs(x, y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])

@@ -1,4 +1,4 @@
-struct SearchTreeCore{S}
+struct SearchTree{S}
     s           ::  Vector{S}                           # [s_idx] -> s
     s_children  ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> sp_idx
     n_sa        ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> n_sa
@@ -6,15 +6,17 @@ struct SearchTreeCore{S}
     prior       ::  NTuple{2, Vector{Vector{Float32}}}  # [player][s_idx][a_i] -> π(s,a)
     v           ::  Vector{Matrix{Float64}}             # [s_idx][a1, a2] -> V(T(s, a1, a2))
     r           ::  Vector{Matrix{Float64}}             # [s_idx][a1, a2] -> r(s, a1, a2)
+    return_sum  ::  Vector{Float64}
+    regret      ::  NTuple{2, Vector{Vector{Float64}}}
+    policy_sum  ::  NTuple{2, Vector{Vector{Float64}}}
 end
 
 const NO_CHILDREN = Matrix{Int}(undef, 0, 0)
 const NO_PRIOR = Vector{Float32}(undef, 0)
 const NO_FLOAT = Vector{Float64}(undef, 0)
-const CORE_TREE_FIELDS = (:s, :s_children, :n_sa, :n_s, :prior, :v, :r)
 
-function SearchTreeCore(game::MG, s=rand(initialstate(game)))
-    return SearchTreeCore(
+function SearchTree(game::MG, s=rand(initialstate(game)))
+    return SearchTree(
         [s],
         Matrix{Int}[NO_CHILDREN],
         Matrix{Int}[NO_CHILDREN],
@@ -22,41 +24,27 @@ function SearchTreeCore(game::MG, s=rand(initialstate(game)))
         ([NO_PRIOR], [NO_PRIOR]),
         [Matrix{Float64}(undef, 0, 0)],
         [Matrix{Float64}(undef, 0, 0)],
+        [0.0],
+        ([NO_FLOAT], [NO_FLOAT]),
+        ([NO_FLOAT], [NO_FLOAT]),
     )
 end
 
-search_core(tree::AbstractSearchTree) = getfield(tree, :core)
-
-function Base.getproperty(tree::AbstractSearchTree, sym::Symbol)
-    if sym in CORE_TREE_FIELDS
-        return getproperty(search_core(tree), sym)
-    end
-    return getfield(tree, sym)
-end
-
-function Base.propertynames(tree::AbstractSearchTree, private::Bool=false)
-    fields = fieldnames(typeof(tree))
-    return private ? (fields..., CORE_TREE_FIELDS...) : (filter(!=(:core), fields)..., CORE_TREE_FIELDS...)
-end
-
-is_leaf(tree::AbstractSearchTree, s_idx::Int) = isempty(tree.s_children[s_idx])
+is_leaf(tree::SearchTree, s_idx::Int) = isempty(tree.s_children[s_idx])
 
 function Tree(params::MCTSParams, game::MG, s=rand(initialstate(game)))
-    return Tree(params.search_style, game, s)
+    return SearchTree(game, s)
 end
 
-Tree(game::MG, s=rand(initialstate(game))) = Tree(RegretMatchingSearch(), game, s)
+Tree(game::MG, s=rand(initialstate(game))) = SearchTree(game, s)
 
-function reset_search_node! end
-function append_search_frontier! end
-
-function expand_s!(tree::AbstractSearchTree, s_idx::Int, game::MG, oracle)
+function expand_s!(tree::SearchTree, s_idx::Int, game::MG, oracle)
     if is_leaf(tree, s_idx)
         _expand_s!(tree, s_idx, game, oracle)
     end
 end
 
-function _expand_s!(tree::AbstractSearchTree, s_idx::Int, game::MG, oracle)
+function _expand_s!(tree::SearchTree, s_idx::Int, game::MG, oracle)
     s = tree.s[s_idx]
     A1, A2 = actions(game)
     na1, na2 = length(A1), length(A2)
@@ -115,12 +103,12 @@ function oracle_state_value(oracle, game::MG, s)
     return Float64(only(value(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))))
 end
 
-function oracle_policy(params::MCTSParams, game::MG, tree::AbstractSearchTree, s_idx::Int)
+function oracle_policy(params::MCTSParams, game::MG, tree::SearchTree, s_idx::Int)
     x, y = state_policy(params.oracle, game, tree.s[s_idx])
     return Float64.(x), Float64.(y)
 end
 
-function empirical_policy(tree::AbstractSearchTree, s_idx::Int)
+function empirical_policy(tree::SearchTree, s_idx::Int)
     counts = tree.n_sa[s_idx]
     x = vec(sum(counts; dims=2))
     y = vec(sum(counts; dims=1))
@@ -149,13 +137,13 @@ function action_idx_from_probs(x, y)
     )
 end
 
-function node_matrix_game(tree::AbstractSearchTree, s_idx::Int, γ::Float64)
+function node_matrix_game(tree::SearchTree, s_idx::Int, γ::Float64)
     return tree.r[s_idx] .+ γ .* tree.v[s_idx]
 end
 
-node_return_sum(tree::AbstractBanditTree, s_idx::Int) = tree.return_sum[s_idx]
+node_return_sum(tree::SearchTree, s_idx::Int) = tree.return_sum[s_idx]
 
-function add_return_sum!(tree::AbstractBanditTree, s_idx::Int, value::Float64)
+function add_return_sum!(tree::SearchTree, s_idx::Int, value::Float64)
     tree.return_sum[s_idx] += value
     return tree.return_sum[s_idx]
 end

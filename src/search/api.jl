@@ -1,8 +1,4 @@
-abstract type AbstractSearchStyle end
-abstract type AbstractSearchTree end
-abstract type AbstractBanditTree <: AbstractSearchTree end
-
-struct RegretMatchingSearch <: AbstractSearchStyle
+struct RegretMatchingSearch
     backup::Symbol
 end
 

@@ -1,4 +1,4 @@
-function D3Trees.D3Tree(tree::AbstractSearchTree; γ::Float64=0.95, title::String="MCTS Tree", kwargs...)
+function D3Trees.D3Tree(tree::SearchTree; γ::Float64=0.95, title::String="MCTS Tree", kwargs...)
     ns = length(tree.s)
     children = [collect(vec(s_children)) for s_children ∈ tree.s_children]
 
