@@ -18,13 +18,13 @@ using Random
 
     game = Fixtures.ScalarMatrixGame()
     oracle = Fixtures.TableOracle(values=Dict(1f0 => 0f0))
-    planner = AZ.AlphaZeroPlanner(game, oracle; max_iter=3, max_time=4.0, max_depth=5, search_style=AZ.MatrixGameSearch(c=1.2, matrix_solver=Fixtures.GreedyMatrixSolver()))
+    planner = AZ.AlphaZeroPlanner(game, oracle; max_iter=3, max_time=4.0, max_depth=5)
     @test planner.max_iter == 3
 
     params = AZ.MCTSParams(planner)
     @test params.tree_queries == 3
     @test params.max_depth == 5
-    @test params.search_style.c == 1.2
+    @test params.search_style isa AZ.RegretMatchingSearch
     @test AZ.with_oracle(params, :new_oracle).oracle == :new_oracle
 
     rm_planner = AZ.AlphaZeroPlanner(
@@ -45,17 +45,14 @@ using Random
         steps_per_iter=2,
         buff_cap=16,
         oracle=train_oracle,
-        mcts_params=AZ.MCTSParams(tree_queries=0, max_depth=2, search_style=AZ.MatrixGameSearch(matrix_solver=Fixtures.GreedyMatrixSolver()), oracle=train_oracle),
+        mcts_params=AZ.MCTSParams(tree_queries=0, max_depth=2, oracle=train_oracle),
         batchsize=1,
         train_intensity=1,
         ema_decay=0.5f0,
     )
     @test iszero(AZ.AlphaZeroPlanner(solver, game).max_iter)
     @test AZ.AlphaZeroPlanner(game, solver).max_depth == 2
-    @test AZ.AlphaZeroPlanner(planner; search_style=AZ.MatrixGameSearch(c=2.0)).search_style.c == 2.0
-
-    mat = AZ.oracle_matrix_game(game, oracle, false)
-    @test mat == game.rewards
+    @test AZ.AlphaZeroPlanner(planner; search_style=AZ.RegretMatchingSearch(backup=:mean)).search_style.backup == :mean
 
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
@@ -74,7 +71,7 @@ using Random
         Flux.loadmodel!(target, state_path)
         @test Flux.state(target) == Flux.state(source)
 
-        planner_target = AZ.AlphaZeroPlanner(game, Fixtures.simple_actor_critic(); max_iter=0, max_depth=1, max_time=1.0, search_style=AZ.MatrixGameSearch(c=1.0, matrix_solver=Fixtures.GreedyMatrixSolver()))
+        planner_target = AZ.AlphaZeroPlanner(game, Fixtures.simple_actor_critic(); max_iter=0, max_depth=1, max_time=1.0)
         Flux.loadmodel!(planner_target, state_path)
         @test Flux.state(planner_target.oracle) == Flux.state(source)
 
@@ -114,7 +111,7 @@ using Random
     @test Flux.state(oracle2) != before
 
     progress = Progress(1; enabled=false)
-    mcts_params = AZ.MCTSParams(tree_queries=0, max_depth=2, search_style=AZ.MatrixGameSearch(matrix_solver=Fixtures.GreedyMatrixSolver()), oracle=Fixtures.simple_actor_critic())
+    mcts_params = AZ.MCTSParams(tree_queries=0, max_depth=2, oracle=Fixtures.simple_actor_critic())
     serial = AZ.serial_mcts(progress, game, mcts_params, 1, initialstate(game); ϵ=0.0)
     @test length(serial) == 1
 

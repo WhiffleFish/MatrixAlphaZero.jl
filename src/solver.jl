@@ -30,10 +30,10 @@ function ema_update!(ema_model, model, decay::Real)
 end
 
 
-@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle, SS<:AbstractSearchStyle} <: Policy
+@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
     game            ::  G
     oracle          ::  Oracle
-    search_style    ::  SS
+    search_style    ::  RegretMatchingSearch
     max_iter        ::  Int
     max_time        ::  Float64
     max_depth       ::  Int
@@ -45,7 +45,7 @@ function AlphaZeroPlanner(
         max_iter        =   0,
         max_time        =   Inf,
         max_depth       =   typemax(Int),
-        search_style    = MatrixGameSearch()
+        search_style    = RegretMatchingSearch()
     )
     return AlphaZeroPlanner(;
         game,
@@ -199,19 +199,4 @@ function serial_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ=0.30)
         next!(progress)
         return hist
     end
-end
-
-function oracle_matrix_game(game, oracle, s)
-    γ = discount(game)
-    A1, A2 = actions(game)
-    mat = zeros(length(A1), length(A2))
-    for (i, a1) ∈ enumerate(A1)
-        for (j, a2) ∈ enumerate(A2)
-            a = (a1, a2)
-            sp, r = @gen(:sp, :r)(game, s, a)
-            vp = only(value(oracle, MarkovGames.convert_s(Vector{Float32}, sp, game)))
-            mat[i,j] = zs_reward_scalar(r) + γ * vp
-        end
-    end
-    return mat
 end

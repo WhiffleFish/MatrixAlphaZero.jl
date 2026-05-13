@@ -57,14 +57,14 @@ as a `Vector{WandbRun}` for analysis in Julia.
 - `project`: W&B project name (e.g. `"Matrix AlphaZero"`).
 - `entity`: W&B username or team name. If `nothing`, defaults to the authenticated user.
 - `filters`: MongoDB-style filter dict forwarded to the W&B API
-  (e.g. `Dict("config.search_style" => "matrix_game")`).
+  (e.g. `Dict("config.search_style" => "regret_matching")`).
 
 # Example
 ```julia
 runs = fetch_wandb_runs("Matrix AlphaZero")
 
 # Filter to a specific search style
-mg_runs = filter(r -> get(r.config, "search_style", "") == "matrix_game", runs)
+rm_runs = filter(r -> get(r.config, "search_style", "") == "regret_matching", runs)
 
 # Extract a metric time series
 losses = mg_runs[1].metrics["mean_loss"]

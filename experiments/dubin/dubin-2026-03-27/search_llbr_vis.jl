@@ -8,9 +8,7 @@ default(grid = false, framestyle = :box, fontfamily = "Computer Modern", label =
 const EXPERIMENT_DIR = @__DIR__
 const RESULTS_DIR = joinpath(EXPERIMENT_DIR, "search_llbr_results")
 const STYLE_ORDER = (
-    ("matrix_game", "Greedy Matrix", 1),
     ("regret_matching", "Regret Matching", 2),
-    ("exp3", "Exp3", 3),
 )
 
 function load_style_result(style_name::String)

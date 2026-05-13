@@ -64,13 +64,8 @@ end
 function tree_policy(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int; ϵ=0.30)
     if iszero(tree.n_s[s_idx]) || isempty(tree.r[s_idx])
         return oracle_policy(params, game, tree, s_idx)
-    elseif style.target_policy == :average
-        x = normalize_or_uniform!(copy(tree.policy_sum[1][s_idx]))
-        y = normalize_or_uniform!(copy(tree.policy_sum[2][s_idx]))
-        return x, y
-    elseif style.target_policy == :empirical
-        return empirical_policy(tree, s_idx)
-    else
-        return selection_policy(style, tree, s_idx; ϵ)
     end
+    x = normalize_or_uniform!(copy(tree.policy_sum[1][s_idx]))
+    y = normalize_or_uniform!(copy(tree.policy_sum[2][s_idx]))
+    return x, y
 end

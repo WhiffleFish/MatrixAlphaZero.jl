@@ -8,11 +8,7 @@ using MatrixAlphaZero
 using Random
 
 const AZ = MatrixAlphaZero
-const STYLE_SPECS = (
-    (; name = "matrix_game", label = "Greedy Matrix", style = AZ.MatrixGameSearch()),
-    (; name = "regret_matching", label = "Regret Matching", style = AZ.RegretMatchingSearch()),
-    (; name = "exp3", label = "Exp3", style = AZ.Exp3Search()),
-)
+const SEARCH_NAME = "regret_matching"
 
 args = ExperimentTools.parse_commandline(
     iter = 50,
@@ -64,36 +60,31 @@ Random.seed!(0)
 base_oracle = init_oracle(width, na1, na2)
 s0 = JointDubinState(SA[1, 1, deg2rad(45)], SA[8, 7, deg2rad(180)])
 
-for spec in STYLE_SPECS
-    style_dir = joinpath(@__DIR__, spec.name)
-    models_dir = joinpath(style_dir, "models")
-    mkpath(style_dir)
+style_dir = joinpath(@__DIR__, SEARCH_NAME)
+models_dir = joinpath(style_dir, "models")
+mkpath(style_dir)
 
-    oracle = deepcopy(base_oracle)
-    jldsave(joinpath(style_dir, "oracle.jld2"); oracle)
+oracle = deepcopy(base_oracle)
+jldsave(joinpath(style_dir, "oracle.jld2"); oracle)
 
-    sol = MatrixAlphaZero.AlphaZeroSolver(
-        oracle = oracle,
-        steps_per_iter = steps_per_iter,
-        max_iter = iter,
-        buff_cap = 1_000_000,
-        batchsize = 256,
-        lr = lr,
-        train_intensity = train_intensity,
-        ema_decay = ema_decay,
-        mcts_params = MatrixAlphaZero.MCTSParams(;
-            tree_queries = tree_queries,
-            oracle,
-            max_depth = max_depth,
-            matrix_solver = MatrixAlphaZero.RegretSolver(100),
-            c = 10.0,
-            search_style = spec.style,
-        ),
-    )
+sol = MatrixAlphaZero.AlphaZeroSolver(
+    oracle = oracle,
+    steps_per_iter = steps_per_iter,
+    max_iter = iter,
+    buff_cap = 1_000_000,
+    batchsize = 256,
+    lr = lr,
+    train_intensity = train_intensity,
+    ema_decay = ema_decay,
+    mcts_params = MatrixAlphaZero.MCTSParams(;
+        tree_queries = tree_queries,
+        oracle,
+        max_depth = max_depth,
+    ),
+)
 
-    cb = AZ.ModelSaveCallback(models_dir)
-    _, info = solve(sol, game; s0 = Deterministic(s0), cb)
-    JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
-end
+cb = AZ.ModelSaveCallback(models_dir)
+_, info = solve(sol, game; s0 = Deterministic(s0), cb)
+JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
 
 rmprocs(p)

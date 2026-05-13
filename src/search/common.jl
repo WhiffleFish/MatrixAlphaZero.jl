@@ -45,7 +45,7 @@ function Tree(params::MCTSParams, game::MG, s=rand(initialstate(game)))
     return Tree(params.search_style, game, s)
 end
 
-Tree(game::MG, s=rand(initialstate(game))) = Tree(MatrixGameSearch(), game, s)
+Tree(game::MG, s=rand(initialstate(game))) = Tree(RegretMatchingSearch(), game, s)
 
 function reset_search_node! end
 function append_search_frontier! end
@@ -141,39 +141,16 @@ end
 eps_exploration(p, ϵ) = inv(length(p)) .* ϵ .+ (1 .- ϵ) .* p
 
 function action_idx_from_probs(x, y)
+    x = normalize_or_uniform!(Float64.(x))
+    y = normalize_or_uniform!(Float64.(y))
     return CartesianIndex(
         rand(Categorical(x)),
         rand(Categorical(y)),
     )
 end
 
-function ucb_exploration(tree::AbstractSearchTree, c::Float64, s_idx::Int)
-    n_sa = tree.n_sa[s_idx]
-    n_s = tree.n_s[s_idx]
-    return c .* sqrt.(log(max(1, n_s)) ./ max.(1, n_sa))
-end
-
-function pucb_exploration(tree::AbstractSearchTree, c::Float64, s_idx::Int; ϵ=0.30)
-    Ē = ucb_exploration(tree, c, s_idx)
-    σ1, σ2 = map(p -> eps_exploration(p, ϵ), getindex.(tree.prior, s_idx))
-    return (σ1 * σ2') .* Ē
-end
-
-function ucb_matrix_games(tree::AbstractSearchTree, c::Float64, s_idx::Int, γ::Float64; ϵ=0.30)
-    V = node_matrix_game(tree, c, s_idx, γ)
-    Ē = pucb_exploration(tree, c, s_idx; ϵ)
-    return V .+ Ē, -V .+ Ē
-end
-
-node_matrix_game(tree::AbstractSearchTree, c, s_idx, γ) = node_matrix_game(tree, s_idx, γ)
-
 function node_matrix_game(tree::AbstractSearchTree, s_idx::Int, γ::Float64)
     return tree.r[s_idx] .+ γ .* tree.v[s_idx]
-end
-
-function explore_action(matrix_solver, tree::AbstractSearchTree, c::Float64, s_idx::Int, γ::Float64; ϵ=0.30)
-    x, y, _ = solve(matrix_solver, ucb_matrix_games(tree, c, s_idx, γ; ϵ)...)
-    return action_idx_from_probs(x, y)
 end
 
 node_return_sum(tree::AbstractBanditTree, s_idx::Int) = tree.return_sum[s_idx]

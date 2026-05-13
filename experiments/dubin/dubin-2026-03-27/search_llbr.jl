@@ -8,12 +8,8 @@ using MatrixAlphaZero
 using ProgressMeter
 
 const AZ = MatrixAlphaZero
-
-const STYLE_SPECS = (
-    (; name = "matrix_game", label = "Greedy Matrix", style = AZ.MatrixGameSearch()),
-    (; name = "regret_matching", label = "Regret Matching", style = AZ.RegretMatchingSearch()),
-    (; name = "exp3", label = "Exp3", style = AZ.Exp3Search()),
-)
+const SEARCH_NAME = "regret_matching"
+const SEARCH_LABEL = "Regret Matching"
 
 args = ExperimentTools.parse_commandline(
     tree_queries = 1_000,
@@ -22,8 +18,8 @@ args = ExperimentTools.parse_commandline(
     every = 50,
 )
 
-function available_checkpoints(style_name::String)
-    model_dir = joinpath(@__DIR__, style_name, "models")
+function available_checkpoints()
+    model_dir = joinpath(@__DIR__, SEARCH_NAME, "models")
     if !isdir(model_dir)
         return Int[]
     end
@@ -39,30 +35,16 @@ function available_checkpoints(style_name::String)
 end
 
 function resolve_checkpoint(requested_checkpoint::Int)
-    style_names = collect(getproperty.(STYLE_SPECS, :name))
-    checkpoint_sets = Dict(name => Set(available_checkpoints(name)) for name in style_names)
+    checkpoints = available_checkpoints()
     if iszero(requested_checkpoint)
-        common = copy(checkpoint_sets[first(style_names)])
-        for name in style_names[2:end]
-            intersect!(common, checkpoint_sets[name])
+        if isempty(checkpoints)
+            error("No checkpoints found in $(joinpath(@__DIR__, SEARCH_NAME, "models")).")
         end
-        if isempty(common)
-            details = join(
-                ["$(name): $(collect(checkpoint_sets[name]))" for name in style_names],
-                ", ",
-            )
-            error("No common checkpoint found across styles. Available checkpoints: $(details)")
-        end
-        return maximum(common)
+        return maximum(checkpoints)
     end
 
-    missing = [name for name in style_names if requested_checkpoint ∉ checkpoint_sets[name]]
-    if !isempty(missing)
-        details = join(
-            ["$(name): $(collect(checkpoint_sets[name]))" for name in missing],
-            ", ",
-        )
-        error("Checkpoint $(requested_checkpoint) is unavailable for $(join(missing, ", ")). Available checkpoints: $(details)")
+    if requested_checkpoint ∉ checkpoints
+        error("Checkpoint $(requested_checkpoint) is unavailable. Available checkpoints: $(checkpoints)")
     end
     return requested_checkpoint
 end
@@ -71,7 +53,6 @@ checkpoint = resolve_checkpoint(args["checkpoint"])
 runs = args["runs"]
 tree_queries = args["tree_queries"]
 every = args["every"]
-c = 10.0
 ϵ = 0.30
 progress_batch = min(10, max(tree_queries, 1))
 
@@ -97,8 +78,10 @@ end
     return JointDubinState(SA[1, 1, deg2rad(45)], SA[8, 7, deg2rad(180)])
 end
 
-@everywhere function load_checkpoint_oracle(style_name::String, checkpoint::Int)
-    style_dir = joinpath(SEARCH_EXPERIMENT_DIR, style_name)
+@everywhere const SEARCH_NAME = $SEARCH_NAME
+
+@everywhere function load_checkpoint_oracle(checkpoint::Int)
+    style_dir = joinpath(SEARCH_EXPERIMENT_DIR, SEARCH_NAME)
     oracle = AZ.load_oracle(style_dir)
     model_path = joinpath(
         style_dir,
@@ -108,55 +91,23 @@ end
     return Flux.loadmodel!(oracle, model_path)
 end
 
-@everywhere function run_style_trial(
-    style_name::String,
-    style,
-    checkpoint::Int,
-    tree_queries::Int,
-    every::Int,
-    c::Float64,
-    ϵ::Float64,
-    trial::Int,
-)
-    seed = Int(hash((style_name, checkpoint, trial)) % UInt(typemax(Int)))
-    Random.seed!(seed)
-    game = DubinMG(V = (1.0, 1.0))
-    oracle = load_checkpoint_oracle(style_name, checkpoint)
-    planner = AlphaZeroPlanner(
-        game,
-        oracle,
-        max_iter = tree_queries,
-        c = c,
-        search_style = style,
-    )
-    params = AZ.MCTSParams(planner)
-    s0 = dubin_reference_state()
-    result = Tools.search_eval(planner, params, game, s0; ϵ, every, progress = false)
-    return (; style = style_name, trial, result...)
-end
-
 @everywhere function run_style_trial_with_progress(
-    style_name::String,
-    style,
     checkpoint::Int,
     tree_queries::Int,
     every::Int,
-    c::Float64,
     ϵ::Float64,
     trial::Int,
     progress_channel,
     progress_batch::Int,
 )
-    seed = Int(hash((style_name, checkpoint, trial)) % UInt(typemax(Int)))
+    seed = Int(hash((SEARCH_NAME, checkpoint, trial)) % UInt(typemax(Int)))
     Random.seed!(seed)
     game = DubinMG(V = (1.0, 1.0))
-    oracle = load_checkpoint_oracle(style_name, checkpoint)
+    oracle = load_checkpoint_oracle(checkpoint)
     planner = AlphaZeroPlanner(
         game,
         oracle,
         max_iter = tree_queries,
-        c = c,
-        search_style = style,
     )
     params = AZ.MCTSParams(planner)
     s0 = dubin_reference_state()
@@ -194,7 +145,7 @@ end
     end
 
     return (;
-        style = style_name,
+        style = SEARCH_NAME,
         trial,
         iter,
         brv1 = brvs1,
@@ -219,10 +170,7 @@ function write_style_results(base_dir::String, style_name::String, style_label::
     write(joinpath(style_dir, "label.txt"), style_label * "\n")
 end
 
-jobs = [
-    (; style_name = spec.name, style_label = spec.label, style = spec.style, trial)
-    for spec in STYLE_SPECS for trial in 1:runs
-]
+jobs = [(; trial) for trial in 1:runs]
 
 total_progress = length(jobs) * tree_queries
 progress = Progress(total_progress; desc = "LLBR search", showspeed = true)
@@ -239,17 +187,14 @@ progress_task = @async begin
     end
 end
 
-println("Using checkpoint $(checkpoint) across $(length(STYLE_SPECS)) search styles, $(runs) runs each, $(tree_queries) queries per run.")
+println("Using checkpoint $(checkpoint) for $(SEARCH_LABEL), $(runs) runs, $(tree_queries) queries per run.")
 
 rows = try
     pmap(jobs) do job
         run_style_trial_with_progress(
-            job.style_name,
-            job.style,
             checkpoint,
             tree_queries,
             every,
-            c,
             ϵ,
             job.trial,
             progress_channel,
@@ -265,9 +210,6 @@ end
 results_dir = joinpath(@__DIR__, "search_llbr_results")
 mkpath(results_dir)
 
-for spec in STYLE_SPECS
-    style_rows = filter(row -> row.style == spec.name, rows)
-    write_style_results(results_dir, spec.name, spec.label, style_rows)
-end
+write_style_results(results_dir, SEARCH_NAME, SEARCH_LABEL, rows)
 
 rmprocs(p)

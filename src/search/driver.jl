@@ -1,5 +1,6 @@
-function zero_query_search(style::MatrixGameSearch, oracle, game, s)
-    return solve(style.matrix_solver, oracle_matrix_game(game, oracle, s))
+function zero_query_search(oracle, game::MG, s)
+    x, y = state_policy(oracle, game, s)
+    return Float64.(x), Float64.(y), oracle_state_value(oracle, game, s)
 end
 
 function search_info(params::MCTSParams, game::MG, s; ϵ=0.30)
@@ -8,7 +9,7 @@ function search_info(params::MCTSParams, game::MG, s; ϵ=0.30)
         n1, n2 = length.(actions(game))
         uniform(n1), uniform(n2), 0.0
     elseif iszero(params.max_depth) || iszero(params.tree_queries) || iszero(params.max_time)
-        zero_query_search(params.search_style, params.oracle, game, s)
+        zero_query_search(params.oracle, game, s)
     else
         for _ ∈ 1:params.tree_queries
             simulate(params, tree, game, 1; ϵ)
@@ -27,14 +28,10 @@ function simulate(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_idx;
 end
 
 function simulate(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
-    return simulate_bandit(style, params, tree, game, s_idx, depth; ϵ)
+    return simulate_regret_matching(style, params, tree, game, s_idx, depth; ϵ)
 end
 
-function simulate(style::Exp3Search, params::MCTSParams, tree::Exp3Tree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
-    return simulate_bandit(style, params, tree, game, s_idx, depth; ϵ)
-end
-
-function simulate_bandit(style::Union{RegretMatchingSearch, Exp3Search}, params::MCTSParams, tree::AbstractBanditTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
+function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
     s = tree.s[s_idx]
     if isterminal(game, s)
         return 0.0
@@ -83,22 +80,18 @@ function node_value(params::MCTSParams, tree::AbstractSearchTree, game::MG, s_id
     return node_value(params.search_style, params, tree, game, s_idx, x, y)
 end
 
-function node_value(::Union{RegretMatchingSearch, Exp3Search}, params::MCTSParams, tree::AbstractBanditTree, game::MG, s_idx::Int, x, y)
+function node_value(::RegretMatchingSearch, params::MCTSParams, tree::RegretMatchingTree, game::MG, s_idx::Int, x, y)
     if iszero(tree.n_s[s_idx])
         return oracle_state_value(params.oracle, game, tree.s[s_idx])
     end
     return node_return_sum(tree, s_idx) / tree.n_s[s_idx]
 end
 
-function backup_value(style::Union{RegretMatchingSearch, Exp3Search}, tree::AbstractBanditTree, s_idx::Int, sample_value::Float64)
+function backup_value(style::RegretMatchingSearch, tree::RegretMatchingTree, s_idx::Int, sample_value::Float64)
     return style.backup == :mean ? node_return_sum(tree, s_idx) / tree.n_s[s_idx] : sample_value
 end
 
 root_policy(style::AbstractSearchStyle, x, y, ϵ::Real) = (x, y)
-
-function root_policy(::MatrixGameSearch, x, y, ϵ::Real)
-    return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
-end
 
 function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
     d = params.max_depth
