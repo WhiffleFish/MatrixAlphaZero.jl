@@ -1,0 +1,3 @@
+[submodule "sim-az-paper"]
+	path = sim-az-paper
+	url = git@github.com:WhiffleFish/sim-az-paper.git
