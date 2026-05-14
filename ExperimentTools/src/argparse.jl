@@ -1,6 +1,8 @@
 function parse_commandline(;
-        iter            = 10,
-        steps_per_iter  = 20_000,
+        max_steps       = 10_000_000,
+        num_steps       = 2048 * 8,
+        update_epochs   = 1,
+        num_batches     = 1,
         tree_queries    = 20,
         max_depth       = 50,
         runs            = nothing,
@@ -17,12 +19,18 @@ function parse_commandline(;
             help = "add n more processes"
             arg_type    = Int
             default     = 19
-        "--iter"
+        "--max_steps"
             arg_type    = Int
-            default     = iter
-        "--steps_per_iter"
+            default     = max_steps
+        "--num_steps"
             arg_type    = Int
-            default     = steps_per_iter
+            default     = num_steps
+        "--update_epochs"
+            arg_type    = Int
+            default     = update_epochs
+        "--num_batches"
+            arg_type    = Int
+            default     = num_batches
         "--tree_queries"
             arg_type    = Int
             default     = tree_queries
@@ -58,8 +66,10 @@ function parse_commandline(;
     parsed_args = parse_args(s)
     if parsed_args["test"]
         parsed_args["addprocs"] = 1
-        parsed_args["iter"] = 1
-        parsed_args["steps_per_iter"] = 2
+        parsed_args["max_steps"] = 2
+        parsed_args["num_steps"] = 2
+        parsed_args["update_epochs"] = 1
+        parsed_args["num_batches"] = 1
         parsed_args["tree_queries"] = 1
         parsed_args["max_depth"] = 10
         if !isnothing(runs)

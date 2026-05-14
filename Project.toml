@@ -5,7 +5,6 @@ authors = ["WhiffleFish <tylertronics@gmail.com>"]
 
 [deps]
 D3Trees = "e3df1716-f71e-5df9-9e2d-98e193103c45"
-DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
@@ -27,7 +26,6 @@ POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
 
 [compat]
 D3Trees = "0.3.4"
-DataStructures = "0.18, 0.19"
 Distributed = "1.11.0"
 Distributions = "0.25.117"
 Flux = "0.16.3"
@@ -40,4 +38,3 @@ Random = "1.11.0"
 SpecialFunctions = "2.5.1"
 TensorGames = "0.3.9"
 Zygote = "0.7.6"
-

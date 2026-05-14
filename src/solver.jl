@@ -1,22 +1,20 @@
 @kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, MP}
-    max_iter        ::  Int     = 100
-    steps_per_iter  ::  Int     = 100_000
-    buff_cap        ::  Int     = 1_000_000
+    max_steps       ::  Int     = 10_000_000
+    num_steps       ::  Int     = 2048 * 8
 
     # MCTS
     oracle          ::  O
     mcts_params     ::  MP      = MCTSParams(;oracle)
 
     # Training args
-    batchsize       ::  Int     = 256
+    update_epochs   ::  Int     = 1
+    num_batches     ::  Int     = 4
     lr              ::  Float32 = 3f-4
     lr_decay        ::  Float32 = 1.0f0  # multiplicative LR factor applied each iteration (1 = no decay)
-    train_intensity ::  Int     = 1
     ema_decay       ::  Float32 = 0.99f0
 
     optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
-        Flux.Optimisers.ClipNorm(1f0),
-        Flux.Optimisers.ClipGrad(1f0),
+        Flux.Optimisers.ClipNorm(0.5f0),
         Flux.Optimisers.Adam(lr)
     )
     rng             ::  RNG = Random.default_rng()
@@ -117,48 +115,51 @@ end
 MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, s))
 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
+    sol.max_steps > 0 || throw(ArgumentError("max_steps must be positive"))
+    sol.num_steps > 0 || throw(ArgumentError("num_steps must be positive"))
     distributed = Distributed.nprocs() > 1
     online_oracle = sol.mcts_params.oracle
     ema_oracle = deepcopy(online_oracle)
-    mcts_iter = max(1, sol.steps_per_iter ÷ sol.mcts_params.max_depth)
-    total_iter = mcts_iter * sol.max_iter
-    progress = Progress(total_iter, safe_lock=false)
-    buf = Buffer(sol.buff_cap)
+    progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
     train_losses = Vector{Float32}[]
     value_losses = Vector{Float32}[]
     policy_losses = Vector{Float32}[]
     prev_ema_oracle = deepcopy(ema_oracle)
     cb_oracle = ema_oracle
-    call(cb, (;oracle=cb_oracle, iter=0, online_oracle, ema_oracle))
-    for i ∈ 1:sol.max_iter
-        ϵ = sol.mcts_params.ϵ(i)
+    steps_done = 0
+    update = 0
+    call(cb, (;oracle=cb_oracle, iter=0, update=0, steps_done, max_steps=sol.max_steps, online_oracle, ema_oracle))
+    while steps_done < sol.max_steps
+        update += 1
+        target_steps = min(sol.num_steps, sol.max_steps - steps_done)
+        ϵ = sol.mcts_params.ϵ(update)
         selfplay_oracle = ema_oracle
         mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
         hists = if distributed
-            distributed_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ)
+            distributed_mcts(progress, game, mcts_params, target_steps, s0; ϵ, steps_done)
         else
-            serial_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ)
+            serial_mcts(progress, game, mcts_params, target_steps, s0; ϵ, steps_done)
         end
-        samples_added = sum(length(hist.v) for hist in hists; init=0)
-        foreach(hists) do hist
-            push!(buf, hist)
-        end
-        train_info = train!(sol, online_oracle, buf; opt_state, steps_per_iter=samples_added)
+        batch = merge_histories(hists)
+        samples_added = length(batch.v)
+        iszero(samples_added) && break
+        steps_done += samples_added
+        train_info = train!(sol, online_oracle, batch; opt_state)
         ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         if sol.lr_decay < 1f0
-            Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ i)
+            Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ update)
         end
         push!(train_losses, train_info[:losses])
         push!(value_losses, train_info[:value_losses])
         push!(policy_losses, train_info[:policy_losses])
         cb_oracle = ema_oracle
         cb_info = merge(
-            (oracle=cb_oracle, iter=i, online_oracle, ema_oracle),
+            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, online_oracle, ema_oracle),
             selfplay_metrics(hists),
             training_metrics(train_info),
-            buffer_metrics(buf, samples_added, sol.buff_cap),
-            oracle_metrics(ema_oracle, prev_ema_oracle, buf),
+            batch_metrics(batch),
+            oracle_metrics(ema_oracle, prev_ema_oracle, batch),
         )
         call(cb, cb_info)
         prev_ema_oracle = deepcopy(ema_oracle)
@@ -174,29 +175,72 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         search_style  = sol.mcts_params.search_style
     )
     return planner, (;
-        train_losses, value_losses, policy_losses, buffer=buf
+        train_losses, value_losses, policy_losses, steps_done
     )
 end
 
-function distributed_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ=0.30)
-    # https://discourse.julialang.org/t/does-anyone-have-a-progress-bar-for-pmap/11729/5
-    channel = RemoteChannel(()->Channel{Bool}(), 1)
-    @async while take!(channel)
-        next!(progress)
+function distributed_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0)
+    hists = NamedTuple[]
+    collected = 0
+    n_tasks = max(1, Distributed.nworkers())
+    while collected < num_steps
+        task_count = min(n_tasks, num_steps - collected)
+        new_hists = pmap(1:task_count) do _
+            mcts_sim(mcts_params, game, rand(s0); ϵ)
+        end
+        made_progress = false
+        for hist in new_hists
+            remaining = num_steps - collected
+            iszero(remaining) && break
+            hist = trim_history(hist, remaining)
+            n = length(hist.v)
+            iszero(n) && continue
+            push!(hists, hist)
+            collected += n
+            made_progress = true
+            update!(progress, steps_done + collected)
+        end
+        made_progress || break
     end
-    hists = pmap(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0); ϵ)
-        put!(channel, true)
-        return hist
-    end
-    put!(channel, false)
     return hists
 end
 
-function serial_mcts(progress, game, mcts_params, mcts_iter, s0; ϵ=0.30)
-    return map(1:mcts_iter) do i
-        hist = mcts_sim(mcts_params, game, rand(s0); ϵ)
-        next!(progress)
-        return hist
+function serial_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0)
+    hists = NamedTuple[]
+    collected = 0
+    while collected < num_steps
+        hist = trim_history(mcts_sim(mcts_params, game, rand(s0); ϵ), num_steps - collected)
+        n = length(hist.v)
+        iszero(n) && break
+        push!(hists, hist)
+        collected += n
+        update!(progress, steps_done + collected)
     end
+    return hists
+end
+
+function trim_history(hist::NamedTuple, max_steps::Int)
+    n = min(max_steps, length(hist.v))
+    return (;
+        s = hist.s[1:n],
+        r = hist.r[1:n],
+        v = hist.v[1:n],
+        policy = (hist.policy[1][1:n], hist.policy[2][1:n]),
+    )
+end
+
+function merge_histories(hists)
+    s = Vector{Float32}[]
+    r = Float64[]
+    v = Float64[]
+    p1 = Vector{Float64}[]
+    p2 = Vector{Float64}[]
+    for hist in hists
+        append!(s, hist.s)
+        append!(r, hist.r)
+        append!(v, hist.v)
+        append!(p1, hist.policy[1])
+        append!(p2, hist.policy[2])
+    end
+    return (; s, r, v, policy=(p1, p2))
 end

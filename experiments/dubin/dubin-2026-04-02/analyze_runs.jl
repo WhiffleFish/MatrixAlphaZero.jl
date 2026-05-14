@@ -79,7 +79,7 @@ ORACLE_QUALITY = [
 
 SELFPLAY = [
     "mean_ep_length", "mean_reward", "reward_std",
-    "buffer_size", "buffer_turnover",
+    "batch_size", "samples_added", "steps_done",
 ]
 
 for run in runs
@@ -102,7 +102,7 @@ for run in runs
     println("\n  ── Oracle Quality ──")
     metric_table(run, ORACLE_QUALITY)
 
-    println("\n  ── Self-play / Buffer ──")
+    println("\n  ── Self-play / Batch ──")
     metric_table(run, SELFPLAY)
 end
 

@@ -11,22 +11,25 @@ const AZ = MatrixAlphaZero
 const SEARCH_NAME = "regret_matching"
 
 args = ExperimentTools.parse_commandline(
-    iter = 50,
-    steps_per_iter = 100_000,
+    max_steps = 5_000_000,
+    num_steps = 100_000,
+    update_epochs = 1,
+    num_batches = 400,
     tree_queries = 150,
     max_depth = 50,
 )
 
 p = addprocs(args["addprocs"])
-iter = args["iter"]
+max_steps = args["max_steps"]
+num_steps = args["num_steps"]
+update_epochs = args["update_epochs"]
+num_batches = args["num_batches"]
 tree_queries = args["tree_queries"]
-steps_per_iter = args["steps_per_iter"]
 max_depth = args["max_depth"]
 
 # Stability-focused defaults
 width = 32
 lr = 3f-4
-train_intensity = 1
 ema_decay = 0.99f0
 
 @everywhere begin
@@ -69,12 +72,11 @@ jldsave(joinpath(style_dir, "oracle.jld2"); oracle)
 
 sol = MatrixAlphaZero.AlphaZeroSolver(
     oracle = oracle,
-    steps_per_iter = steps_per_iter,
-    max_iter = iter,
-    buff_cap = 1_000_000,
-    batchsize = 256,
+    max_steps = max_steps,
+    num_steps = num_steps,
+    update_epochs = update_epochs,
+    num_batches = num_batches,
     lr = lr,
-    train_intensity = train_intensity,
     ema_decay = ema_decay,
     mcts_params = MatrixAlphaZero.MCTSParams(;
         tree_queries = tree_queries,

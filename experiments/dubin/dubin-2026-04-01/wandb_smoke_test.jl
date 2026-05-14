@@ -30,23 +30,21 @@ cb = (
         config  = Dict(
             "tree_queries" => 100,
             "max_depth"    => 3,
-            "search_style" => "MatrixGameSearch",
+            "search_style" => "RegretMatchingSearch",
         ),
     ),
 )
 
 sol = AZ.AlphaZeroSolver(
     oracle        = oracle,
-    max_iter      = 50,
-    steps_per_iter = 1_000,
-    buff_cap      = 100_000,
-    batchsize     = 128,
-    train_intensity = 1,
+    max_steps     = 1_000,
+    num_steps     = 1_000,
+    update_epochs = 1,
+    num_batches   = 8,
     mcts_params   = AZ.MCTSParams(;
         tree_queries = 100,
         max_depth    = 50,
         oracle,
-        search_style = AZ.MatrixGameSearch(c = 1.0, matrix_solver = AZ.RegretSolver(50)),
     ),
 )
 

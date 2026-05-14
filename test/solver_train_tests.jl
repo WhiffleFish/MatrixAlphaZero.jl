@@ -41,13 +41,12 @@ using Random
 
     train_oracle = Fixtures.simple_actor_critic()
     solver = AZ.AlphaZeroSolver(
-        max_iter=1,
-        steps_per_iter=2,
-        buff_cap=16,
+        max_steps=2,
+        num_steps=2,
         oracle=train_oracle,
         mcts_params=AZ.MCTSParams(tree_queries=0, max_depth=2, oracle=train_oracle),
-        batchsize=1,
-        train_intensity=1,
+        update_epochs=1,
+        num_batches=1,
         ema_decay=0.5f0,
     )
     @test iszero(AZ.AlphaZeroPlanner(solver, game).max_iter)
@@ -81,30 +80,30 @@ using Random
         @test AZ.load_oracle(oracle_path) isa AZ.ActorCritic
     end
 
-    buf = AZ.Buffer(8)
-    push!(buf, (
+    batch = (
         s = [Float32[0], Float32[1], Float32[0], Float32[1]],
         v = Float32[1, 0, 1, 0],
         policy = (
             [Float32[1, 0], Float32[0, 1], Float32[1, 0], Float32[0, 1]],
             [Float32[0, 1], Float32[1, 0], Float32[0, 1], Float32[1, 0]],
         ),
-    ))
-    X, v_target, p_target = AZ.get_batch(buf, 2)
-    @test size(X) == (1, 2)
-    @test length(v_target) == 2
-    @test size(p_target[1]) == (2, 2)
+    )
+    X, v_target, p_target = AZ.training_arrays(batch)
+    @test size(X) == (1, 4)
+    @test length(v_target) == 4
+    @test size(p_target[1]) == (2, 4)
+    @test sort(vcat(collect.(AZ.minibatches(collect(1:5), 2))...)) == collect(1:5)
     @test AZ.l2_penalty(Float32[1, 2, 3]) ≈ Float32(14 / 3)
 
     oracle2 = Fixtures.simple_actor_critic()
     before = deepcopy(Flux.state(oracle2))
     train_sol = (
-        batchsize = 2,
-        steps_per_iter = 4,
-        train_intensity = 1,
+        num_batches = 2,
+        update_epochs = 1,
         optimiser = Flux.Optimisers.Adam(0.01f0),
+        rng = Random.MersenneTwister(1),
     )
-    train_info = AZ.train!(train_sol, oracle2, buf)
+    train_info = AZ.train!(train_sol, oracle2, batch)
     @test length(train_info.losses) == 2
     @test length(train_info.value_losses) == 2
     @test length(train_info.policy_losses) == 2
@@ -121,6 +120,6 @@ using Random
     callback_iters = Int[]
     planner_out, solve_info = MarkovGames.solve(solver, game; cb=info -> push!(callback_iters, info.iter))
     @test planner_out isa AZ.AlphaZeroPlanner
-    @test length(solve_info.buffer) > 0
+    @test solve_info.steps_done == 2
     @test callback_iters == [0, 1]
 end

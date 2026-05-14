@@ -39,8 +39,8 @@ function (cb::MetricsCallback)(info::NamedTuple)
     if hasproperty(info, :mean_ep_length)
         println("  self-play:   ep_len=$(_r(info.mean_ep_length, 1))  reward μ=$(_r3(info.mean_reward))  σ=$(_r3(info.reward_std))")
     end
-    if hasproperty(info, :buffer_size)
-        println("  buffer:      size=$(info.buffer_size)  turnover=$(_r3(info.buffer_turnover))")
+    if hasproperty(info, :batch_size)
+        println("  batch:       size=$(info.batch_size)  steps=$(get(info, :steps_done, info.batch_size))/$(get(info, :max_steps, "?"))")
     end
     println(bar)
 end

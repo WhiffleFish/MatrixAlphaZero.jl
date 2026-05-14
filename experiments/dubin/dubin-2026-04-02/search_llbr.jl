@@ -10,9 +10,7 @@ using ProgressMeter
 const AZ = MatrixAlphaZero
 
 const STYLE_SPECS = (
-    (; name = "matrix_game", label = "Greedy Matrix", style = AZ.MatrixGameSearch(c=10.0, matrix_solver=AZ.RegretSolver(100))),
     (; name = "regret_matching", label = "Regret Matching", style = AZ.RegretMatchingSearch()),
-    (; name = "exp3", label = "Exp3", style = AZ.Exp3Search()),
 )
 
 args = ExperimentTools.parse_commandline(

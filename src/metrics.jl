@@ -53,34 +53,31 @@ function training_metrics(train_info)
 end
 
 """
-    buffer_metrics(buf, samples_added, capacity) -> NamedTuple
+    batch_metrics(batch) -> NamedTuple
 
-Replay buffer occupancy and throughput for the current iteration.
+Fresh training-batch size for the current iteration.
 
 | Field             | Description                                                                      |
 |:------------------|:---------------------------------------------------------------------------------|
-| `buffer_size`     | Total number of transitions currently stored in the buffer.                      |
-| `buffer_turnover` | Fraction of the buffer capacity written this iteration (`samples_added/capacity`).|
-|                   | Near 0 → buffer is filling slowly; near 1 → almost the whole buffer was replaced.|
+| `batch_size`      | Number of current-iteration transitions used for training.                       |
 """
-function buffer_metrics(buf::Buffer, samples_added::Int, capacity::Int)
+function batch_metrics(batch::NamedTuple)
     return (;
-        buffer_size     = length(buf),
-        buffer_turnover = Float32(samples_added) / capacity,
+        batch_size = length(batch.v),
     )
 end
 
 """
-    oracle_metrics(oracle, prev_oracle, buf; n_samples=128) -> NamedTuple
+    oracle_metrics(oracle, prev_oracle, batch; n_samples=128) -> NamedTuple
 
 Oracle quality metrics estimated from a random sample of `n_samples` transitions in the
-replay buffer. Requires the oracle to support batched `policy(oracle, X)` and
+current training batch. Requires the oracle to support batched `policy(oracle, X)` and
 `value(oracle, X)` calls (satisfied by `ActorCritic`).
 
 | Field                | Description                                                                    |
 |:---------------------|:-------------------------------------------------------------------------------|
-| `policy_entropy_p1/2`| Shannon entropy of the search-backed policy targets stored in the buffer,      |
-|                      | averaged over all buffer entries. High entropy = exploring broadly;            |
+| `policy_entropy_p1/2`| Shannon entropy of the search-backed policy targets in the current batch,      |
+|                      | averaged over current samples. High entropy = exploring broadly;               |
 |                      | collapsing entropy = converging (or mode-collapsing) to a near-deterministic   |
 |                      | policy.                                                                        |
 | `policy_kl_p1/2`     | KL divergence D(oracle_cur ‖ oracle_prev) at the sampled states. Measures how  |
@@ -90,24 +87,25 @@ replay buffer. Requires the oracle to support batched `policy(oracle, X)` and
 | `search_oracle_kl_p1/2` | KL divergence D(oracle_cur ‖ search_target) at the sampled states. Measures|
 |                      | how far the oracle's current predictions are from the search-backed targets it |
 |                      | was trained on. A rising value means the oracle is drifting away from what the |
-|                      | search found, which can signal overfitting to stale data or training instability.|
+|                      | search found, which can signal training instability.                           |
 | `value_pred_mse`     | Mean squared error between the oracle's value predictions and the value targets |
-|                      | stored in the buffer. Directly measures value head accuracy on replay data.    |
+|                      | in the current batch. Directly measures value-head fit on fresh data.          |
 """
-function oracle_metrics(oracle, prev_oracle, buf::Buffer; n_samples::Int=128)
-    iszero(length(buf)) && return (;
+function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=128)
+    batch_size = length(batch.v)
+    iszero(batch_size) && return (;
         policy_entropy_p1   = NaN32, policy_entropy_p2   = NaN32,
         policy_kl_p1        = NaN32, policy_kl_p2        = NaN32,
         search_oracle_kl_p1 = NaN32, search_oracle_kl_p2 = NaN32,
         value_pred_mse      = NaN32,
     )
-    n    = min(n_samples, length(buf))
-    idxs = rand(1:length(buf), n)
-    X    = reduce(hcat, buf.s[idxs])
+    n    = min(n_samples, batch_size)
+    idxs = rand(1:batch_size, n)
+    X    = reduce(hcat, batch.s[idxs])
 
     # Policy entropy from stored search-backed policy targets
-    h1 = Float32(policy_entropy(buf.p[1]))
-    h2 = Float32(policy_entropy(buf.p[2]))
+    h1 = Float32(policy_entropy(batch.policy[1]))
+    h2 = Float32(policy_entropy(batch.policy[2]))
 
     # Policy change: KL between current and previous EMA oracle
     p_cur  = policy(oracle, X)
@@ -116,14 +114,14 @@ function oracle_metrics(oracle, prev_oracle, buf::Buffer; n_samples::Int=128)
     kl_p2 = Float32(mean(kl_divergence(p_cur[2][:, i], p_prev[2][:, i]) for i ∈ 1:n))
 
     # Search vs oracle: KL between current oracle policy and stored search targets
-    p_s1   = reduce(hcat, buf.p[1][idxs])
-    p_s2   = reduce(hcat, buf.p[2][idxs])
+    p_s1   = reduce(hcat, batch.policy[1][idxs])
+    p_s2   = reduce(hcat, batch.policy[2][idxs])
     skl_p1 = Float32(mean(kl_divergence(p_cur[1][:, i], p_s1[:, i]) for i ∈ 1:n))
     skl_p2 = Float32(mean(kl_divergence(p_cur[2][:, i], p_s2[:, i]) for i ∈ 1:n))
 
     # Value prediction error against stored value targets
     v_pred = vec(value(oracle, X))
-    v_mse  = Float32(mean(abs2, v_pred .- buf.v[idxs]))
+    v_mse  = Float32(mean(abs2, v_pred .- batch.v[idxs]))
 
     return (;
         policy_entropy_p1   = h1,
