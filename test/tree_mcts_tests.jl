@@ -52,6 +52,8 @@ using Random
     @test length(hist.s) == 1
     @test only(hist.r) ∈ vec(game.rewards)
     @test only(hist.v) > 0.0
+    @test length(hist.search_time) == 1
+    @test only(hist.search_time) >= 0.0
     @test isapprox(sum(hist.policy[1][1]), 1.0; atol=1e-6)
     @test isapprox(sum(hist.policy[2][1]), 1.0; atol=1e-6)
 
@@ -68,6 +70,7 @@ using Random
     )
     rollout_hist = AZ.mcts_sim(rollout_params, Fixtures.TwoStepGame(), 0; progress=false, ϵ=0.0)
     @test length(rollout_hist.v) == 1
+    @test length(rollout_hist.search_time) == 1
     @test isapprox(rollout_hist.v[1], 2.0; atol=1e-6)
 
     bad_params = AZ.MCTSParams(

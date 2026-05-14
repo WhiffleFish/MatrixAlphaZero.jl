@@ -16,14 +16,19 @@ Aggregate statistics over the self-play trajectories collected in one training i
 | `mean_ep_length` | Mean number of steps per episode across all rollouts.        |
 | `mean_reward`    | Mean per-step reward pooled across all steps and episodes.   |
 | `reward_std`     | Standard deviation of per-step rewards (spread of outcomes). |
+| `mean_search_time` | Mean wall-clock seconds spent per tree search.             |
 """
 function selfplay_metrics(hists)
     ep_lengths = map(h -> length(h.v), hists)
     rewards = mapreduce(h -> h.r, vcat, hists)
+    search_times = mapreduce(h -> h.search_time, vcat, hists)
     return (;
-        mean_ep_length = Float32(mean(ep_lengths)),
-        mean_reward    = Float32(mean(rewards)),
-        reward_std     = Float32(std(rewards)),
+        mean_ep_length   = Float32(mean(ep_lengths)),
+        mean_reward      = Float32(mean(rewards)),
+        reward_std       = Float32(std(rewards)),
+        mean_search_time = Float32(mean(search_times)),
+        total_search_time = Float32(sum(search_times)),
+        search_count     = length(search_times),
     )
 end
 

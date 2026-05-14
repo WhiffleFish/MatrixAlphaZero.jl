@@ -62,20 +62,21 @@ end
 # ── Per-run analysis ───────────────────────────────────────────────────────────
 
 TRAINING_HEALTH = [
-    "mean_loss", "mean_value_loss", "mean_policy_loss",
-    "mean_grad_norm", "max_grad_norm",
+    "training_health/mean_loss", "training_health/mean_value_loss", "training_health/mean_policy_loss",
+    "training_health/mean_grad_norm", "training_health/max_grad_norm",
 ]
 
 ORACLE_QUALITY = [
-    "value_pred_mse",
-    "policy_entropy_p1", "policy_entropy_p2",
-    "policy_kl_p1", "policy_kl_p2",
-    "search_oracle_kl_p1", "search_oracle_kl_p2",
+    "oracle_quality/value_pred_mse",
+    "oracle_quality/policy_entropy_p1", "oracle_quality/policy_entropy_p2",
+    "oracle_quality/policy_kl_p1", "oracle_quality/policy_kl_p2",
+    "oracle_quality/search_oracle_kl_p1", "oracle_quality/search_oracle_kl_p2",
 ]
 
 SELFPLAY = [
-    "mean_ep_length", "mean_reward", "reward_std",
-    "batch_size", "samples_added", "steps_done",
+    "selfplay/mean_ep_length", "selfplay/mean_reward", "selfplay/reward_std",
+    "selfplay/mean_search_time", "selfplay/total_search_time", "selfplay/search_count",
+    "selfplay/batch_size", "progress/samples_added", "progress/steps_done",
 ]
 
 for run in runs
@@ -108,10 +109,10 @@ if length(runs) > 1
     section("Cross-run Comparison (final-iteration values)")
 
     compare_metrics = [
-        "mean_loss", "mean_value_loss", "mean_policy_loss",
-        "mean_grad_norm", "value_pred_mse",
-        "policy_entropy_p1", "search_oracle_kl_p1",
-        "mean_reward", "mean_ep_length",
+        "training_health/mean_loss", "training_health/mean_value_loss", "training_health/mean_policy_loss",
+        "training_health/mean_grad_norm", "oracle_quality/value_pred_mse",
+        "oracle_quality/policy_entropy_p1", "oracle_quality/search_oracle_kl_p1",
+        "selfplay/mean_reward", "selfplay/mean_ep_length",
     ]
 
     name_w = maximum(length(r.name) for r in runs) + 2
@@ -136,9 +137,9 @@ if length(runs) > 1
     # Highlight winners per metric
     println("\n  ── Best per metric ──")
     better_lower = Set([
-        "mean_loss", "mean_value_loss", "mean_policy_loss",
-        "mean_grad_norm", "max_grad_norm", "value_pred_mse",
-        "search_oracle_kl_p1", "search_oracle_kl_p2",
+        "training_health/mean_loss", "training_health/mean_value_loss", "training_health/mean_policy_loss",
+        "training_health/mean_grad_norm", "training_health/max_grad_norm", "oracle_quality/value_pred_mse",
+        "oracle_quality/search_oracle_kl_p1", "oracle_quality/search_oracle_kl_p2",
     ])
     for m in compare_metrics
         vals = map(runs) do r

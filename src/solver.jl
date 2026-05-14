@@ -218,6 +218,7 @@ function trim_history(hist::NamedTuple, max_steps::Int)
         s = hist.s[1:n],
         r = hist.r[1:n],
         v = hist.v[1:n],
+        search_time = hist.search_time[1:n],
         policy = (hist.policy[1][1:n], hist.policy[2][1:n]),
     )
 end

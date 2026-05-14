@@ -13,15 +13,60 @@ function (cb::WandbCallback)(info::NamedTuple)
         k in (:oracle, :online_oracle, :ema_oracle) && continue
         v = getproperty(info, k)
         if v isa Number && isfinite(v)
-            metrics[string(k)] = v
+            metrics[wandb_metric_key(k)] = v
         elseif k == :minibatch_metrics
-            metrics[string(k)] = minibatch_metrics_table(v)
+            metrics[wandb_metric_key(k)] = minibatch_metrics_table(v)
         end
     end
     Wandb.log(cb.logger, metrics; step=info.iter)
 end
 
 Base.close(cb::WandbCallback) = close(cb.logger)
+
+const WANDB_TRAINING_HEALTH_KEYS = Set((
+    :mean_loss,
+    :mean_value_loss,
+    :mean_policy_loss,
+    :mean_grad_norm,
+    :max_grad_norm,
+    :minibatch_metrics,
+))
+
+const WANDB_ORACLE_QUALITY_KEYS = Set((
+    :value_pred_mse,
+    :policy_entropy_p1,
+    :policy_entropy_p2,
+    :policy_kl_p1,
+    :policy_kl_p2,
+    :search_oracle_kl_p1,
+    :search_oracle_kl_p2,
+))
+
+const WANDB_SELFPLAY_KEYS = Set((
+    :mean_ep_length,
+    :mean_reward,
+    :reward_std,
+    :mean_search_time,
+    :total_search_time,
+    :search_count,
+    :batch_size,
+))
+
+const WANDB_PROGRESS_KEYS = Set((
+    :iter,
+    :update,
+    :steps_done,
+    :max_steps,
+    :samples_added,
+))
+
+function wandb_metric_key(k::Symbol)
+    k in WANDB_TRAINING_HEALTH_KEYS && return "training_health/$(k)"
+    k in WANDB_ORACLE_QUALITY_KEYS && return "oracle_quality/$(k)"
+    k in WANDB_SELFPLAY_KEYS && return "selfplay/$(k)"
+    k in WANDB_PROGRESS_KEYS && return "progress/$(k)"
+    return string(k)
+end
 
 function minibatch_metrics_table(metrics)
     columns = ["minibatch", "loss", "value_loss", "policy_loss", "grad_norm"]
@@ -83,11 +128,11 @@ runs = fetch_wandb_runs("Matrix AlphaZero")
 rm_runs = filter(r -> get(r.config, "search_style", "") == "regret_matching", runs)
 
 # Extract a metric time series
-losses = mg_runs[1].metrics["mean_loss"]
+losses = mg_runs[1].metrics["training_health/mean_loss"]
 
 # Compare value MSE across styles
 for r in runs
-    println(r.name, ": final value_mse = ", last(r.metrics["value_pred_mse"]))
+    println(r.name, ": final value_mse = ", last(r.metrics["oracle_quality/value_pred_mse"]))
 end
 ```
 """

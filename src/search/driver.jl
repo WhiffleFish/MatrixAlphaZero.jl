@@ -99,6 +99,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
     v = 0.0
     r_hist = Float64[]
     v_hist = Float64[]
+    search_time_hist = Float64[]
     s_hist = Vector{Float32}[]
     policy_hist = (
         Vector{Float64}[],
@@ -111,7 +112,9 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
     p = Progress(d, enabled=progress)
 
     while (t < d) && !isterminal(game, s)
+        search_start = time()
         x, y, gv = search(params, game, s; ϵ)
+        search_time = time() - search_start
 
         a_idxs = Tuple(action_idx_from_probs(x, y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
@@ -119,6 +122,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
         r = zs_reward_scalar(r)
         v += r * γ^(t - 1)
         push!(r_hist, r)
+        push!(search_time_hist, search_time)
         push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
         push!(v_hist, use_search_targets ? gv : 0.0)
         push!(policy_hist[1], x)
@@ -143,6 +147,7 @@ function mcts_sim(params::MCTSParams, game::MG, s; progress=false, ϵ=0.30)
         s = s_hist,
         r = r_hist,
         v = v_hist,
+        search_time = search_time_hist,
         policy = policy_hist,
     )
 end
