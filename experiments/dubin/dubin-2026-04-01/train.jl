@@ -119,9 +119,8 @@ for spec in STYLE_SPECS
         (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback(), wandb_cb)
     end
 
-    _, info = solve(sol, game; s0 = Deterministic(s0), cb)
+    solve(sol, game; s0 = Deterministic(s0), cb)
     isnothing(wandb_cb) || close(wandb_cb)
-    JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
 end
 
 rmprocs(p)

@@ -103,10 +103,10 @@ using Random
         optimiser = Flux.Optimisers.Adam(0.01f0),
         rng = Random.MersenneTwister(1),
     )
-    train_info = AZ.train!(train_sol, oracle2, batch)
-    @test length(train_info.losses) == 2
-    @test length(train_info.value_losses) == 2
-    @test length(train_info.policy_losses) == 2
+    train_stats = AZ.train!(train_sol, oracle2, batch)
+    @test length(train_stats.losses) == 2
+    @test length(train_stats.value_losses) == 2
+    @test length(train_stats.policy_losses) == 2
     @test Flux.state(oracle2) != before
 
     progress = Progress(1; enabled=false)
@@ -118,8 +118,15 @@ using Random
     @test length(distributed) == 1
 
     callback_iters = Int[]
-    planner_out, solve_info = MarkovGames.solve(solver, game; cb=info -> push!(callback_iters, info.iter))
+    callback_steps = Int[]
+    callback_has_minibatches = Bool[]
+    planner_out = MarkovGames.solve(solver, game; cb=info -> begin
+        push!(callback_iters, info.iter)
+        hasproperty(info, :steps_done) && push!(callback_steps, info.steps_done)
+        push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
+    end)
     @test planner_out isa AZ.AlphaZeroPlanner
-    @test solve_info.steps_done == 2
+    @test callback_steps[end] == 2
+    @test callback_has_minibatches == [false, true]
     @test callback_iters == [0, 1]
 end

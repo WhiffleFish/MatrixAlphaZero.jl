@@ -86,7 +86,6 @@ sol = MatrixAlphaZero.AlphaZeroSolver(
 )
 
 cb = AZ.ModelSaveCallback(models_dir)
-_, info = solve(sol, game; s0 = Deterministic(s0), cb)
-JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
+solve(sol, game; s0 = Deterministic(s0), cb)
 
 rmprocs(p)

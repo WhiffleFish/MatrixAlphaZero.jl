@@ -28,7 +28,7 @@ function selfplay_metrics(hists)
 end
 
 """
-    training_metrics(train_info) -> NamedTuple
+    training_metrics(train_stats) -> NamedTuple
 
 Aggregate statistics over the gradient update steps within one training iteration.
 
@@ -42,13 +42,23 @@ Aggregate statistics over the gradient update steps within one training iteratio
 | `max_grad_norm`  | Maximum gradient norm seen across all mini-batches in the iteration. Useful for       |
 |                  | detecting isolated spikes that the mean would smooth over.                            |
 """
-function training_metrics(train_info)
+function training_metrics(train_stats)
     return (;
-        mean_loss         = Float32(mean(train_info[:losses])),
-        mean_value_loss   = Float32(mean(train_info[:value_losses])),
-        mean_policy_loss  = Float32(mean(train_info[:policy_losses])),
-        mean_grad_norm    = Float32(mean(train_info[:grad_norms])),
-        max_grad_norm     = Float32(maximum(train_info[:grad_norms])),
+        mean_loss         = Float32(mean(train_stats[:losses])),
+        mean_value_loss   = Float32(mean(train_stats[:value_losses])),
+        mean_policy_loss  = Float32(mean(train_stats[:policy_losses])),
+        mean_grad_norm    = Float32(mean(train_stats[:grad_norms])),
+        max_grad_norm     = Float32(maximum(train_stats[:grad_norms])),
+    )
+end
+
+function training_minibatch_metrics(train_stats)
+    return (;
+        minibatch   = collect(1:length(train_stats[:losses])),
+        loss        = Float32.(train_stats[:losses]),
+        value_loss  = Float32.(train_stats[:value_losses]),
+        policy_loss = Float32.(train_stats[:policy_losses]),
+        grad_norm   = Float32.(train_stats[:grad_norms]),
     )
 end
 

@@ -12,12 +12,28 @@ function (cb::WandbCallback)(info::NamedTuple)
     for k in propertynames(info)
         k in (:oracle, :online_oracle, :ema_oracle) && continue
         v = getproperty(info, k)
-        v isa Number && isfinite(v) && (metrics[string(k)] = v)
+        if v isa Number && isfinite(v)
+            metrics[string(k)] = v
+        elseif k == :minibatch_metrics
+            metrics[string(k)] = minibatch_metrics_table(v)
+        end
     end
     Wandb.log(cb.logger, metrics; step=info.iter)
 end
 
 Base.close(cb::WandbCallback) = close(cb.logger)
+
+function minibatch_metrics_table(metrics)
+    columns = ["minibatch", "loss", "value_loss", "policy_loss", "grad_norm"]
+    n = length(metrics.minibatch)
+    data = Matrix{Float64}(undef, n, length(columns))
+    data[:, 1] .= Float64.(metrics.minibatch)
+    data[:, 2] .= Float64.(metrics.loss)
+    data[:, 3] .= Float64.(metrics.value_loss)
+    data[:, 4] .= Float64.(metrics.policy_loss)
+    data[:, 5] .= Float64.(metrics.grad_norm)
+    return Wandb.Table(; data, columns)
+end
 
 # ── Fetching runs back for analysis ───────────────────────────────────────────
 

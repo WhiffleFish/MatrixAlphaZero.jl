@@ -122,9 +122,6 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     ema_oracle = deepcopy(online_oracle)
     progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
-    train_losses = Vector{Float32}[]
-    value_losses = Vector{Float32}[]
-    policy_losses = Vector{Float32}[]
     prev_ema_oracle = deepcopy(ema_oracle)
     cb_oracle = ema_oracle
     steps_done = 0
@@ -145,19 +142,17 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         samples_added = length(batch.v)
         iszero(samples_added) && break
         steps_done += samples_added
-        train_info = train!(sol, online_oracle, batch; opt_state)
+        train_stats = train!(sol, online_oracle, batch; opt_state)
         ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         if sol.lr_decay < 1f0
             Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ update)
         end
-        push!(train_losses, train_info[:losses])
-        push!(value_losses, train_info[:value_losses])
-        push!(policy_losses, train_info[:policy_losses])
         cb_oracle = ema_oracle
         cb_info = merge(
             (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, online_oracle, ema_oracle),
             selfplay_metrics(hists),
-            training_metrics(train_info),
+            training_metrics(train_stats),
+            (; minibatch_metrics=training_minibatch_metrics(train_stats)),
             batch_metrics(batch),
             oracle_metrics(ema_oracle, prev_ema_oracle, batch),
         )
@@ -174,9 +169,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         max_depth     = sol.mcts_params.max_depth,
         search_style  = sol.mcts_params.search_style
     )
-    return planner, (;
-        train_losses, value_losses, policy_losses, steps_done
-    )
+    return planner
 end
 
 function distributed_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0)

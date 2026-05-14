@@ -95,8 +95,8 @@ for spec in STYLE_SPECS
     wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
         WandbCallback(
             project = "Matrix AlphaZero",
-            name    = "dubin-$(spec.name)",
-            group   = "dubin-2026-04-02",
+            # name    = "dubin-$(spec.name)",
+            group   = "dubin",
             config  = Dict(
                 "search_style"   => spec.name,
                 "tree_queries"   => tree_queries,
@@ -122,9 +122,8 @@ for spec in STYLE_SPECS
         (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback(), wandb_cb)
     end
 
-    _, info = solve(sol, game; s0 = Deterministic(s0), cb)
+    solve(sol, game; s0 = Deterministic(s0), cb)
     isnothing(wandb_cb) || close(wandb_cb)
-    JLD2.jldsave(joinpath(style_dir, "train_info.jld2"); info...)
 end
 
 rmprocs(p)
