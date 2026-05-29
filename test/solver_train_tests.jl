@@ -3,6 +3,7 @@ using Flux
 using JLD2
 using ProgressMeter
 using Random
+using MarkovGames
 
 @testset "solver.jl and train.jl" begin
     ema_model = Fixtures.simple_fitted_regret_model()

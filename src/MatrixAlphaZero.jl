@@ -2,7 +2,6 @@ module MatrixAlphaZero
 
 using MarkovGames
 using Flux
-using TensorGames
 using ProgressMeter
 using LinearAlgebra
 using Random
@@ -13,9 +12,6 @@ using POMDPs
 using POMDPTools
 using SpecialFunctions
 using D3Trees
-
-include("matrix.jl")
-export PATHSolver, RegretSolver
 
 include("metrics.jl")
 export selfplay_metrics, training_metrics, batch_metrics, oracle_metrics

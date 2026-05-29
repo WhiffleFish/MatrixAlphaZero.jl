@@ -6,7 +6,6 @@ const AZ = MatrixAlphaZero
 include("support/fixtures.jl")
 using .Fixtures
 
-include("matrix_tests.jl")
 include("callbacks_tests.jl")
 include("nn_tests.jl")
 include("tree_mcts_tests.jl")
