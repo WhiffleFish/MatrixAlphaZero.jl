@@ -1,31 +1,20 @@
-struct RegretMatchingSearch
-    backup::Symbol
-end
-
-function RegretMatchingSearch(; backup::Symbol=:sample)
-    backup ∈ (:sample, :mean) || throw(ArgumentError("Unsupported backup=$(backup). Use :sample or :mean."))
-    return RegretMatchingSearch(backup)
-end
-
-@kwdef struct MCTSParams{E, Oracle}
-    tree_queries    :: Int      = 150
+@kwdef struct SMOOSParams{E, Oracle}
+    oos_iterations  :: Int      = 150
+    transfer_steps  :: Int      = 0
+    transfer_weight :: Float64  = 1.0
     max_depth       :: Int      = 50
     ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
-    max_time        :: Float64  = Inf
-    search_style    :: RegretMatchingSearch = RegretMatchingSearch()
     oracle          :: Oracle
-    value_target    :: Symbol   = :search
 end
 
-function with_oracle(params::MCTSParams, oracle)
-    return MCTSParams(;
-        tree_queries = params.tree_queries,
+function with_oracle(params::SMOOSParams, oracle)
+    return SMOOSParams(;
+        oos_iterations = params.oos_iterations,
+        transfer_steps = params.transfer_steps,
+        transfer_weight = params.transfer_weight,
         max_depth = params.max_depth,
         ϵ = params.ϵ,
-        max_time = params.max_time,
-        search_style = params.search_style,
         oracle,
-        value_target = params.value_target
     )
 end
 
@@ -35,8 +24,6 @@ zs_reward_scalar(x::Number) = x
 zs_reward_scalar(x::Union{Tuple, AbstractArray}) = first(x)
 
 function Tree end
-function search_info end
-function search end
-function simulate end
-function tree_policy end
-function node_value end
+function fitted_smoos_info end
+function fitted_smoos end
+function smoos_trajectory! end

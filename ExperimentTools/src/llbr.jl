@@ -2,63 +2,55 @@ using Base.Threads: @threads
 using Random
 
 function policy1_from_tree(game, planner, tree)
-    params = AZ.MCTSParams(planner)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.r[idx]) # not searched
-            x,y = AZ.state_policy(planner.oracle, game, s)
+        if isnothing(idx) || isempty(tree.strategy[1][idx])
+            x, _ = AZ.state_strategy(planner.oracle, game, s)
             return x
-        else # searched
-            x, y = AZ.tree_policy(params, tree, game, idx)
-            return x
+        else
+            return AZ.normalized_or_uniform(tree.strategy[1][idx])
         end
     end
 end
 
 function policy2_from_tree(game, planner, tree)
-    params = AZ.MCTSParams(planner)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.r[idx]) # not searched
-            x,y = AZ.state_policy(planner.oracle, game, s)
+        if isnothing(idx) || isempty(tree.strategy[2][idx])
+            _, y = AZ.state_strategy(planner.oracle, game, s)
             return y
-        else # searched
-            x, y = AZ.tree_policy(params, tree, game, idx)
-            return y
+        else
+            return AZ.normalized_or_uniform(tree.strategy[2][idx])
         end
     end
 end
 
 function joint_policy_from_tree(game, planner, tree)
-    params = AZ.MCTSParams(planner)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.r[idx]) # not searched
-            x,y = AZ.state_policy(planner.oracle, game, s)
-            return x,y
-        else # searched
-            x, y = AZ.tree_policy(params, tree, game, idx)
-            return x,y
+        if isnothing(idx) || isempty(tree.strategy[1][idx])
+            return AZ.state_strategy(planner.oracle, game, s)
+        else
+            return AZ.normalized_or_uniform(tree.strategy[1][idx]), AZ.normalized_or_uniform(tree.strategy[2][idx])
         end
     end
 end
 
-function search_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; ϵ=0.30, every=10, progress=true)
+function search_eval(planner::AlphaZeroPlanner, params::SMOOSParams, game::MG, s; ϵ=0.30, every=10, progress=true)
     tree = AZ.Tree(params, game, s)
-    (;tree_queries) = params
+    (;oos_iterations) = params
     iter    = Int[]
     brvs1   = Float64[]
     brvs2   = Float64[]
     v       = Float64[]
-    p = Progress(tree_queries; enabled=progress)
-    for i ∈ 1:tree_queries
-        AZ.simulate(params, tree, game, 1; ϵ)
+    p = Progress(oos_iterations; enabled=progress)
+    for i ∈ 1:oos_iterations
+        AZ.smoos_trajectory!(params, tree, game, 1, 0, 1.0, 1.0, 1.0, 1.0; ϵ)
         if iszero(mod(i, every))
             π1 = policy1_from_tree(game, planner, tree)
             π2 = policy2_from_tree(game, planner, tree)
             brv1, brv2 = approx_br_values_both_st(game, planner.oracle, π1, π2, s; max_depth=5)
-            x, y = AZ.tree_policy(params, tree, game, 1)
-            t = AZ.node_value(params, tree, game, 1, x, y)
+            t = AZ.oracle_state_value(planner.oracle, game, s)
             push!(iter, i)
             push!(brvs1, brv1)
             push!(brvs2, brv2)
@@ -103,42 +95,13 @@ function exploit_p2_joint_policy(planner::AlphaZeroPlanner, game::MG)
     end |> FunctionBehavior
 end
 
-function sim_eval(planner::AlphaZeroPlanner, params::MCTSParams, game::MG, s; ϵ=0.30, every=10, progress=true)
-    tree = AZ.Tree(params, game, s)
-    (;tree_queries) = params
-    iter    = Int[]
-    brvs1   = Float64[]
-    brvs2   = Float64[]
-    v       = Float64[]
-    p = Progress(tree_queries; enabled=progress)
-    for i ∈ 1:tree_queries
-        AZ.simulate(params, tree, game, 1; ϵ)
-        if iszero(mod(i, every))
-            π1 = policy1_from_tree(game, planner, tree)
-            π2 = policy2_from_tree(game, planner, tree)
-            brv1, brv2, br2_map, br1_map = approx_br_values_both_st(game, planner.oracle, π1, π2, s; max_depth=5, return_policies=true)
-            x, y = AZ.tree_policy(params, tree, game, 1)
-            t = AZ.node_value(params, tree, game, 1, x, y)
-            push!(iter, i)
-            push!(brvs1, brv1)
-            push!(brvs2, brv2)
-            push!(v, t)
-        end
-        next!(p)
-    end
-    finish!(p)
-    return (;
-        iter, 
-        brv1 = brvs1, 
-        brv2 = brvs2, 
-        v
-    )
-end
+sim_eval(planner::AlphaZeroPlanner, params::SMOOSParams, game::MG, s; kwargs...) =
+    search_eval(planner, params, game, s; kwargs...)
 
 
 # Convenience: policies from your oracle (policy head)
-policy1_from_oracle(oracle) = (game, s) -> first(AZ.state_policy(oracle, game, s))
-policy2_from_oracle(oracle) = (game, s) -> last(AZ.state_policy(oracle, game, s))
+policy1_from_oracle(oracle) = (game, s) -> first(AZ.state_strategy(oracle, game, s))
+policy2_from_oracle(oracle) = (game, s) -> last(AZ.state_strategy(oracle, game, s))
 
 
 ##

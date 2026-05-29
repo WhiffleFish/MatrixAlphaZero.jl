@@ -1,72 +1,101 @@
 function state_value end
 function batch_state_value end
 
-function state_policy end
-function batch_state_policy end
+function state_regret end
+function batch_state_regret end
 
+function state_strategy end
+function batch_state_strategy end
 
-struct ActorCritic{S,A,C}
+# Convenience aliases for downstream policy-oriented code.
+state_policy(args...) = state_strategy(args...)
+batch_state_policy(args...) = batch_state_strategy(args...)
+policy(args...; kwargs...) = strategy(args...; kwargs...)
+
+struct FittedRegretModel{S,R,A,C}
     shared::S
-    actor::A
+    regret_head::R
+    strategy_head::A
     critic::C
 end
 
-state_value(ac::ActorCritic, game::MG, s) = value(ac, convert_s(Vector{Float32}, s, game))
+FittedRegretModel(regret_head, strategy_head, critic) =
+    FittedRegretModel(identity, regret_head, strategy_head, critic)
 
-function batch_state_value(ac::ActorCritic, game::MG, sv)
+Flux.@layer :expand FittedRegretModel
+
+function (model::FittedRegretModel)(x; logits=false)
+    encoded_input = model.shared(x)
+    value = model.critic(encoded_input)
+    regret = model.regret_head(encoded_input; logits=true)
+    strategy = model.strategy_head(encoded_input; logits)
+    return (; value, regret, strategy)
+end
+
+function value(model::FittedRegretModel, x)
+    encoded_input = model.shared(x)
+    return model.critic(encoded_input)
+end
+
+function regret(model::FittedRegretModel, x)
+    encoded_input = model.shared(x)
+    return model.regret_head(encoded_input; logits=true)
+end
+
+function strategy(model::FittedRegretModel, x; logits=false)
+    encoded_input = model.shared(x)
+    return model.strategy_head(encoded_input; logits)
+end
+
+state_value(model::FittedRegretModel, game::MG, s) =
+    value(model, convert_s(Vector{Float32}, s, game))
+
+state_regret(model::FittedRegretModel, game::MG, s) =
+    regret(model, convert_s(Vector{Float32}, s, game))
+
+state_strategy(model::FittedRegretModel, game::MG, s) =
+    strategy(model, convert_s(Vector{Float32}, s, game))
+
+function batch_state_value(model::FittedRegretModel, game::MG, sv)
     batch_s = mapreduce(hcat, sv) do s_i
         convert_s(Vector{Float32}, s_i, game)
     end
-    return value(ac, batch_s)
+    return value(model, batch_s)
 end
 
-state_policy(ac::ActorCritic, game::MG, s) = policy(ac, convert_s(Vector{Float32}, s, game))
-
-function batch_state_policy(ac::ActorCritic, game::MG, sv)
+function batch_state_regret(model::FittedRegretModel, game::MG, sv)
     batch_s = mapreduce(hcat, sv) do s_i
         convert_s(Vector{Float32}, s_i, game)
     end
-    return policy(ac, batch_s)
+    return regret(model, batch_s)
 end
 
-ActorCritic(actor, critic) = ActorCritic(identity, actor, critic)
-
-Flux.@layer :expand ActorCritic
-
-function (ac::ActorCritic)(x; logits=false)
-    encoded_input = ac.shared(x)
-    value = ac.critic(encoded_input)
-    policy = ac.actor(encoded_input; logits)
-    return (; value, policy)
+function batch_state_strategy(model::FittedRegretModel, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return strategy(model, batch_s)
 end
 
-function loss(ac::ActorCritic, x, value_target, policy_target)
-    encoded_input = ac.shared(x)
-    value_loss = criticloss(ac.critic, encoded_input, value_target)
-    policy_loss = actorloss(ac.actor, encoded_input, policy_target)
-    return value_loss, policy_loss
+function loss(model::FittedRegretModel, x, value_target, regret_target, strategy_target)
+    encoded_input = model.shared(x)
+    value_loss = criticloss(model.critic, encoded_input, value_target)
+    regret_loss = fitted_regret_loss(model.regret_head, encoded_input, regret_target)
+    strategy_loss = fitted_strategy_loss(model.strategy_head, encoded_input, strategy_target)
+    return value_loss, regret_loss, strategy_loss
+end
+
+function getloss(model::FittedRegretModel, input; value_target, regret_target, strategy_target)
+    encoded_input = model.shared(input)
+    value_loss, value_mse = getloss(model.critic, encoded_input; value_target)
+    regret_loss = fitted_regret_loss(model.regret_head, encoded_input, regret_target)
+    strategy_loss = fitted_strategy_loss(model.strategy_head, encoded_input, strategy_target)
+    return (; value_loss, value_mse, regret_loss, strategy_loss)
 end
 
 function criticloss(critic, x::AbstractArray, v_target::AbstractArray)
     v = critic(x)
     return Flux.Losses.huber_loss(dropdims(v; dims=1), v_target)
-end
-
-function value(ac::ActorCritic, x)
-    encoded_input = ac.shared(x)
-    return ac.critic(encoded_input)
-end
-
-function policy(ac::ActorCritic, x)
-    encoded_input = ac.shared(x)
-    return ac.actor(encoded_input)
-end
-
-function getloss(ac::ActorCritic, input; value_target, policy_target)
-    encoded_input = ac.shared(input)
-    value_loss, value_mse = getloss(ac.critic, encoded_input; value_target)
-    policy_loss = getloss(ac.actor, encoded_input; policy_target)
-    return (; value_loss, value_mse, policy_loss)
 end
 
 struct MultiActor{T<:Tuple}
@@ -77,17 +106,25 @@ end
 
 Base.getindex(actor::MultiActor, i) = getindex(actor.actors, i)
 
-(actor::MultiActor)(x; logits=false) = map(actor.actors) do actor
-    out = actor(x)
+(actor::MultiActor)(x; logits=false) = map(actor.actors) do actor_i
+    out = actor_i(x)
     logits ? out : softmax(out)
 end
 
-function actorloss(actor::MultiActor, x::AbstractArray, p_target)
-    p = actor(x; logits=true)
-    return mapreduce(+, p, p_target) do p_i, p_target_i
-        Flux.Losses.logitcrossentropy(p_i, p_target_i)
+fitted_regret_loss(head::MultiActor, x::AbstractArray, r_target) =
+    mapreduce(+, head(x; logits=true), r_target) do r_i, target_i
+        Flux.Losses.huber_loss(r_i, target_i)
+    end
+
+function fitted_strategy_loss(head::MultiActor, x::AbstractArray, s_target)
+    s = head(x; logits=true)
+    return mapreduce(+, s, s_target) do s_i, target_i
+        Flux.Losses.logitcrossentropy(s_i, target_i)
     end
 end
+
+actorloss(actor::MultiActor, x::AbstractArray, p_target) =
+    fitted_strategy_loss(actor, x, p_target)
 
 struct HLGaussCritic{N,S}
     net::N
@@ -141,7 +178,8 @@ function transform_to_probs(critic::HLGaussCritic, target::AbstractVector)
     end
 end
 
-transform_from_probs(critic::HLGaussCritic, probs::AbstractVector) = dot(critic.centers, probs)
+transform_from_probs(critic::HLGaussCritic, probs::AbstractVector) =
+    dot(critic.centers, probs)
 
 function transform_from_probs(critic::HLGaussCritic, probs::AbstractMatrix)
     return map(eachcol(probs)) do p
@@ -160,23 +198,28 @@ end
 function criticloss(critic::HLGaussCritic, x::AbstractArray, y::AbstractArray)
     ŷ = critic(x; logits=true)
     return Flux.Losses.logitcrossentropy(ŷ, y)
-end 
+end
 
-## 
-
-struct StaticActorCritic{A,C}
-    actor::A
+struct StaticFittedRegretModel{R,A,C}
+    regret::R
+    strategy::A
     critic::C
 end
 
-state_value(ac::StaticActorCritic, game, s) = ac.critic(s)
+state_value(model::StaticFittedRegretModel, game, s) = model.critic(s)
 
-batch_state_value(ac::StaticActorCritic, game, sv) = map(sv) do s_i
-    ac.critic(s_i)
+batch_state_value(model::StaticFittedRegretModel, game, sv) = map(sv) do s_i
+    model.critic(s_i)
 end
 
-state_policy(ac::StaticActorCritic, game, s) = ac.actor(s)
+state_regret(model::StaticFittedRegretModel, game, s) = model.regret(s)
 
-batch_state_policy(ac::StaticActorCritic, game, sv) = map(sv) do s_i
-    ac.actor(s_i)
+batch_state_regret(model::StaticFittedRegretModel, game, sv) = map(sv) do s_i
+    model.regret(s_i)
+end
+
+state_strategy(model::StaticFittedRegretModel, game, s) = model.strategy(s)
+
+batch_state_strategy(model::StaticFittedRegretModel, game, sv) = map(sv) do s_i
+    model.strategy(s_i)
 end

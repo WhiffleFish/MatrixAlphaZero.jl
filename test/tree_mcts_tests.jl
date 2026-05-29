@@ -1,121 +1,92 @@
 using Random
 
-@testset "tree.jl and mcts.jl" begin
+@testset "tree.jl and fitted SM-OOS" begin
     game = Fixtures.ScalarMatrixGame()
     oracle = Fixtures.TableOracle(
         values=Dict(0f0 => 0f0, 1f0 => 5f0),
-        policies=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
+        regrets=Dict(0f0 => (Float32[0.8, -0.2], Float32[-0.1, 0.9])),
+        strategies=Dict(0f0 => (Float32[0.25, 0.75], Float32[0.6, 0.4])),
     )
-    tree = AZ.Tree(game, false)
-    @test AZ.is_leaf(tree, 1)
+    params = AZ.SMOOSParams(
+        oos_iterations=0,
+        transfer_steps=3,
+        transfer_weight=2.0,
+        max_depth=2,
+        oracle=oracle,
+    )
+    tree = AZ.Tree(params, game, false)
+    @test fieldnames(typeof(tree)) == (:s, :children, :regret, :strategy)
+    @test !(:n_s in fieldnames(typeof(tree)))
+    @test !(:n_sa in fieldnames(typeof(tree)))
 
-    AZ.expand_s!(tree, 1, game, oracle)
-    @test !AZ.is_leaf(tree, 1)
-    @test size(tree.s_children[1]) == (2, 2)
-    @test length(tree.s) == 5
-    @test tree.r[1] == game.rewards
-    @test tree.v[1] == zeros(2, 2)
-    @test tree.prior[1][1] == Float32[0.8, 0.2]
-    @test tree.prior[2][1] == Float32[0.1, 0.9]
+    AZ.expand_node!(tree, 1, game, params)
+    @test isapprox(tree.regret[1][1], 6 .* [0.8, -0.2]; atol=1e-6)
+    @test isapprox(tree.regret[2][1], 6 .* [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(tree.strategy[1][1], 6 .* [0.25, 0.75]; atol=1e-6)
+    @test isapprox(tree.strategy[2][1], 6 .* [0.6, 0.4]; atol=1e-6)
 
-    @test AZ.node_matrix_game(tree, 1, 1.0) == game.rewards
+    yr, ys = AZ.root_targets(params, tree, game, 1)
+    @test isapprox(yr[1], [0.8, -0.2]; atol=1e-6)
+    @test isapprox(yr[2], [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(ys[1], [0.25, 0.75]; atol=1e-6)
+    @test isapprox(ys[2], [0.6, 0.4]; atol=1e-6)
+
     @test AZ.uniform(3) == fill(1 / 3, 3)
     @test AZ.eps_exploration([1.0, 0.0], 0.2) ≈ [0.9, 0.1]
     @test AZ.zs_reward_scalar((3.0, -3.0)) == 3.0
     @test AZ.zs_reward_scalar(2.5) == 2.5
-    @test_throws MethodError AZ.RegretMatchingSearch(target_policy=:current)
 
     Random.seed!(7)
     idx = AZ.action_idx_from_probs([0.0, 1.0], [1.0, 0.0])
     @test idx == CartesianIndex(2, 1)
 
-    params = AZ.MCTSParams(
-        tree_queries=400,
+    search_params = AZ.SMOOSParams(
+        oos_iterations=64,
+        transfer_steps=0,
+        transfer_weight=1.0,
         max_depth=2,
-        max_time=1.0,
         oracle=oracle,
     )
-    (x, y, v), info = AZ.search_info(params, game, false; ϵ=0.0)
-    @test x[2] > x[1]
-    @test y[1] > y[2]
-    @test v > 0.0
-    @test length(info.tree.s) == 5
-    x2, y2, v2 = AZ.search(params, game, false; ϵ=0.0)
-    @test x2[2] > x2[1]
-    @test y2[1] > y2[2]
-    @test v2 > 0.0
-
-    tree2 = AZ.Tree(game, false)
-    @test AZ.simulate(params, tree2, game, 1; ϵ=0.0) == 0.0
-
-    hist = AZ.mcts_sim(params, game, false; progress=false, ϵ=0.0)
-    @test length(hist.s) == 1
-    @test only(hist.r) ∈ vec(game.rewards)
-    @test only(hist.v) > 0.0
-    @test length(hist.search_time) == 1
-    @test only(hist.search_time) >= 0.0
-    @test isapprox(sum(hist.policy[1][1]), 1.0; atol=1e-6)
-    @test isapprox(sum(hist.policy[2][1]), 1.0; atol=1e-6)
-
-    rollout_oracle = Fixtures.TableOracle(
-        values=Dict(1f0 => 4f0, 2f0 => 0f0),
-        policies=Dict(0f0 => (Float32[0.1, 0.9], Float32[0.9, 0.1])),
-    )
-    rollout_params = AZ.MCTSParams(
-        tree_queries=0,
-        max_depth=2,
-        max_time=1.0,
-        oracle=rollout_oracle,
-        value_target=:rollout,
-    )
-    rollout_hist = AZ.mcts_sim(rollout_params, Fixtures.TwoStepGame(), 0; progress=false, ϵ=0.0)
-    @test length(rollout_hist.v) == 1
-    @test length(rollout_hist.search_time) == 1
-    @test isapprox(rollout_hist.v[1], 2.0; atol=1e-6)
-
-    bad_params = AZ.MCTSParams(
-        tree_queries=0,
-        oracle=oracle,
-        value_target=:bad,
-    )
-    @test_throws ArgumentError AZ.mcts_sim(bad_params, game, false; progress=false, ϵ=0.0)
-
-    bandit_oracle = Fixtures.TableOracle(
-        values=Dict(0f0 => 0f0, 1f0 => 0f0),
-        policies=Dict(0f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5])),
-    )
-
-    Random.seed!(1)
-    rm_params = AZ.MCTSParams(
-        tree_queries=400,
-        max_depth=4,
-        max_time=1.0,
-        oracle=bandit_oracle,
-    )
-    (x_rm, y_rm, v_rm), rm_info = AZ.search_info(rm_params, game, false; ϵ=0.1)
-    @test x_rm[2] > x_rm[1]
-    @test y_rm[1] > y_rm[2]
-    @test v_rm > 0.6
-    @test rm_info.tree.return_sum[1] > 0.0
+    (yr2, ys2), info = AZ.fitted_smoos_info(search_params, game, false; ϵ=0.0)
+    @test length(yr2[1]) == 2
+    @test length(yr2[2]) == 2
+    @test length(ys2[1]) == 2
+    @test length(ys2[2]) == 2
+    @test all(isfinite, yr2[1])
+    @test all(isfinite, yr2[2])
+    @test sum(AZ.normalized_or_uniform(ys2[1])) ≈ 1.0
+    @test sum(AZ.normalized_or_uniform(ys2[2])) ≈ 1.0
+    @test info.tree isa AZ.SMOOSTree
 
     step_oracle = Fixtures.TableOracle(
         values=Dict(0f0 => 0f0, 1f0 => 0.5f0, 2f0 => 0f0),
-        policies=Dict(
+        regrets=Dict(
+            0f0 => (Float32[0.0, 0.0], Float32[0.0, 0.0]),
+            1f0 => (Float32[0.0, 0.0], Float32[0.0, 0.0]),
+        ),
+        strategies=Dict(
             0f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5]),
             1f0 => (Float32[0.5, 0.5], Float32[0.5, 0.5]),
         ),
     )
     Random.seed!(2)
-    rm_mean_params = AZ.MCTSParams(
-        tree_queries=500,
+    rollout_params = AZ.SMOOSParams(
+        oos_iterations=1,
+        transfer_steps=0,
+        transfer_weight=1.0,
         max_depth=3,
-        max_time=1.0,
         oracle=step_oracle,
-        search_style=AZ.RegretMatchingSearch(backup=:mean),
     )
-    (x_rm_mean, y_rm_mean, v_rm_mean), rm_mean_info = AZ.search_info(rm_mean_params, Fixtures.TwoStepGame(), 0; ϵ=0.1)
-    @test x_rm_mean[1] > 0.9
-    @test y_rm_mean[1] > 0.9
-    @test isapprox(v_rm_mean, 1.25; atol=0.1)
-    @test isapprox(v_rm_mean, rm_mean_info.tree.return_sum[1] / rm_mean_info.tree.n_s[1]; atol=1e-6)
+    (_, _), rollout_info = AZ.fitted_smoos_info(rollout_params, Fixtures.TwoStepGame(), 0; ϵ=0.0)
+    @test length(rollout_info.tree.s) == 3
+    @test !isempty(rollout_info.tree.regret[1][1])
+    @test !isempty(rollout_info.tree.regret[1][2])
+
+    hist = AZ.smoos_sim(rollout_params, Fixtures.TwoStepGame(), 0; progress=false, ϵ=0.0, gae_lambda=1.0)
+    @test length(hist.s) == 2
+    @test length(hist.r) == 2
+    @test length(hist.v) == 2
+    @test length(hist.search_time) == 2
+    @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[1][1])), 1.0; atol=1e-6)
+    @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[2][1])), 1.0; atol=1e-6)
 end

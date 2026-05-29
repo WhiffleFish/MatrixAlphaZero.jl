@@ -23,4 +23,15 @@ end
 AZ.batch_state_value(oracle::SimpleOracle, game, sv) = map(sv) do s_i
     AZ.state_value(oracle, game, s_i)
 end
-AZ.state_policy(oracle::SimpleOracle, game, s) = haskey(oracle.d, s) ? oracle.d[s].policy : (uniform.(length.(actions(game))))
+function AZ.state_regret(oracle::SimpleOracle, game, s)
+    return zeros.(Float32, length.(actions(game)))
+end
+function AZ.batch_state_regret(oracle::SimpleOracle, game, sv)
+    r = map(s_i -> AZ.state_regret(oracle, game, s_i), sv)
+    return (map(first, r), map(last, r))
+end
+AZ.state_strategy(oracle::SimpleOracle, game, s) = haskey(oracle.d, s) ? oracle.d[s].policy : (uniform.(length.(actions(game))))
+function AZ.batch_state_strategy(oracle::SimpleOracle, game, sv)
+    σ = map(s_i -> AZ.state_strategy(oracle, game, s_i), sv)
+    return (map(first, σ), map(last, σ))
+end

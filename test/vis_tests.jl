@@ -10,17 +10,14 @@ using D3Trees
     game = Fixtures.ScalarMatrixGame()
     oracle = Fixtures.TableOracle(
         values=Dict(1f0 => 0f0),
-        policies=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
+        regrets=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
+        strategies=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
     )
-    tree = AZ.Tree(game, false)
-    AZ.expand_s!(tree, 1, game, oracle)
-    tree.n_s[1] = 6
-    tree.n_sa[1] .= [
-        3 0
-        1 2
-    ]
+    params = AZ.SMOOSParams(oos_iterations=1, transfer_steps=1, transfer_weight=1.0, max_depth=2, oracle=oracle)
+    (_, _), info = AZ.fitted_smoos_info(params, game, false; ϵ=0.0)
+    tree = info.tree
 
-    d3 = D3Trees.D3Tree(tree; γ=1.0, title="Test Tree")
+    d3 = D3Trees.D3Tree(tree; title="Test Tree")
     @test length(d3.children) == length(tree.s)
     @test d3.title == "Test Tree"
     @test occursin("s1", d3.text[1])

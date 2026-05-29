@@ -26,7 +26,8 @@ Base.close(cb::WandbCallback) = close(cb.logger)
 const WANDB_TRAINING_HEALTH_KEYS = Set((
     :mean_loss,
     :mean_value_loss,
-    :mean_policy_loss,
+    :mean_regret_loss,
+    :mean_strategy_loss,
     :mean_grad_norm,
     :max_grad_norm,
     :minibatch_metrics,
@@ -34,12 +35,13 @@ const WANDB_TRAINING_HEALTH_KEYS = Set((
 
 const WANDB_ORACLE_QUALITY_KEYS = Set((
     :value_pred_mse,
-    :policy_entropy_p1,
-    :policy_entropy_p2,
-    :policy_kl_p1,
-    :policy_kl_p2,
-    :search_oracle_kl_p1,
-    :search_oracle_kl_p2,
+    :regret_pred_mse,
+    :strategy_entropy_p1,
+    :strategy_entropy_p2,
+    :strategy_kl_p1,
+    :strategy_kl_p2,
+    :target_strategy_kl_p1,
+    :target_strategy_kl_p2,
 ))
 
 const WANDB_SELFPLAY_KEYS = Set((
@@ -69,14 +71,15 @@ function wandb_metric_key(k::Symbol)
 end
 
 function minibatch_metrics_table(metrics)
-    columns = ["minibatch", "loss", "value_loss", "policy_loss", "grad_norm"]
+    columns = ["minibatch", "loss", "value_loss", "regret_loss", "strategy_loss", "grad_norm"]
     n = length(metrics.minibatch)
     data = Matrix{Float64}(undef, n, length(columns))
     data[:, 1] .= Float64.(metrics.minibatch)
     data[:, 2] .= Float64.(metrics.loss)
     data[:, 3] .= Float64.(metrics.value_loss)
-    data[:, 4] .= Float64.(metrics.policy_loss)
-    data[:, 5] .= Float64.(metrics.grad_norm)
+    data[:, 4] .= Float64.(metrics.regret_loss)
+    data[:, 5] .= Float64.(metrics.strategy_loss)
+    data[:, 6] .= Float64.(metrics.grad_norm)
     return Wandb.Table(; data, columns)
 end
 

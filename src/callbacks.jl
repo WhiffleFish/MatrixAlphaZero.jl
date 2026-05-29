@@ -24,17 +24,17 @@ function (cb::MetricsCallback)(info::NamedTuple)
     println(bar)
     println("  iter $(info.iter)")
     if hasproperty(info, :mean_loss)
-        println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  policy=$(_r(info.mean_policy_loss))")
+        println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  regret=$(_r(info.mean_regret_loss))  strategy=$(_r(info.mean_strategy_loss))")
     end
     if hasproperty(info, :mean_grad_norm)
         println("  grad norm:   mean=$(_r3(info.mean_grad_norm))  max=$(_r3(info.max_grad_norm))")
     end
-    if hasproperty(info, :policy_entropy_p1)
-        println("  entropy:     p1=$(_r3(info.policy_entropy_p1))  p2=$(_r3(info.policy_entropy_p2))")
-        println("  policy Δkl:  p1=$(_r(info.policy_kl_p1))  p2=$(_r(info.policy_kl_p2))")
+    if hasproperty(info, :strategy_entropy_p1)
+        println("  entropy:     p1=$(_r3(info.strategy_entropy_p1))  p2=$(_r3(info.strategy_entropy_p2))")
+        println("  strategy Δkl:  p1=$(_r(info.strategy_kl_p1))  p2=$(_r(info.strategy_kl_p2))")
     end
-    if hasproperty(info, :search_oracle_kl_p1)
-        println("  oracle↔search kl:  p1=$(_r(info.search_oracle_kl_p1))  p2=$(_r(info.search_oracle_kl_p2))  │  value mse=$(_r(info.value_pred_mse))")
+    if hasproperty(info, :target_strategy_kl_p1)
+        println("  oracle↔target kl:  p1=$(_r(info.target_strategy_kl_p1))  p2=$(_r(info.target_strategy_kl_p2))  │  regret mse=$(_r(info.regret_pred_mse))  value mse=$(_r(info.value_pred_mse))")
     end
     if hasproperty(info, :mean_ep_length)
         println("  self-play:   ep_len=$(_r(info.mean_ep_length, 1))  reward μ=$(_r3(info.mean_reward))  σ=$(_r3(info.reward_std))")

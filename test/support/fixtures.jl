@@ -62,7 +62,7 @@ state_key(s::Bool) = Float32(s ? 1 : 0)
 state_key(s::Int) = Float32(s)
 state_key(x::AbstractVector) = Float32(only(x))
 
-function uniform_policy(game)
+function uniform_strategy(game)
     A1, A2 = actions(game)
     return (
         fill(Float32(inv(length(A1))), length(A1)),
@@ -72,10 +72,15 @@ end
 
 struct TableOracle
     values::Dict{Float32, Float32}
-    policies::Dict{Float32, NTuple{2, Vector{Float32}}}
+    regrets::Dict{Float32, NTuple{2, Vector{Float32}}}
+    strategies::Dict{Float32, NTuple{2, Vector{Float32}}}
 end
 
-TableOracle(; values=Dict{Float32, Float32}(), policies=Dict{Float32, NTuple{2, Vector{Float32}}}()) = TableOracle(values, policies)
+TableOracle(;
+    values=Dict{Float32, Float32}(),
+    regrets=Dict{Float32, NTuple{2, Vector{Float32}}}(),
+    strategies=Dict{Float32, NTuple{2, Vector{Float32}}}(),
+) = TableOracle(values, regrets, strategies)
 
 function AZ.value(o::TableOracle, x::AbstractVector)
     return Float32[get(o.values, state_key(x), 0f0)]
@@ -86,15 +91,28 @@ function AZ.value(o::TableOracle, x::AbstractMatrix)
     return reshape(vals, 1, :)
 end
 
-function AZ.state_policy(o::TableOracle, game::MG, s)
-    return get(o.policies, state_key(s), uniform_policy(game))
+function AZ.state_regret(o::TableOracle, game::MG, s)
+    A1, A2 = actions(game)
+    return get(o.regrets, state_key(s), (zeros(Float32, length(A1)), zeros(Float32, length(A2))))
 end
 
-function AZ.batch_state_policy(o::TableOracle, game::MG, sv)
-    π = map(s -> AZ.state_policy(o, game, s), sv)
+function AZ.batch_state_regret(o::TableOracle, game::MG, sv)
+    r = map(s -> AZ.state_regret(o, game, s), sv)
     return (
-        map(first, π),
-        map(last, π),
+        map(first, r),
+        map(last, r),
+    )
+end
+
+function AZ.state_strategy(o::TableOracle, game::MG, s)
+    return get(o.strategies, state_key(s), uniform_strategy(game))
+end
+
+function AZ.batch_state_strategy(o::TableOracle, game::MG, sv)
+    σ = map(s -> AZ.state_strategy(o, game, s), sv)
+    return (
+        map(first, σ),
+        map(last, σ),
     )
 end
 
@@ -117,22 +135,28 @@ function MarkovGames.solve(::GreedyMatrixSolver, A::AbstractMatrix, B::AbstractM
     return MarkovGames.solve(GreedyMatrixSolver(), A)
 end
 
-function simple_actor_critic(; input_dim::Int=1, hidden_dim::Int=4, action_dims=(2, 2))
+function simple_fitted_regret_model(; input_dim::Int=1, hidden_dim::Int=4, action_dims=(2, 2))
     shared = Dense(input_dim => hidden_dim, tanh)
-    actor1 = Dense(hidden_dim => action_dims[1])
-    actor2 = Dense(hidden_dim => action_dims[2])
+    regret1 = Dense(hidden_dim => action_dims[1])
+    regret2 = Dense(hidden_dim => action_dims[2])
+    strategy1 = Dense(hidden_dim => action_dims[1])
+    strategy2 = Dense(hidden_dim => action_dims[2])
     critic = Dense(hidden_dim => 1)
 
     shared.weight .= reshape(Float32.(range(-0.4, 0.4; length=length(shared.weight))), size(shared.weight))
     shared.bias .= Float32.(range(-0.2, 0.2; length=length(shared.bias)))
-    actor1.weight .= reshape(Float32.(range(-0.3, 0.3; length=length(actor1.weight))), size(actor1.weight))
-    actor1.bias .= Float32.(range(-0.1, 0.1; length=length(actor1.bias)))
-    actor2.weight .= reshape(Float32.(range(0.25, -0.25; length=length(actor2.weight))), size(actor2.weight))
-    actor2.bias .= Float32.(range(0.05, -0.05; length=length(actor2.bias)))
+    regret1.weight .= reshape(Float32.(range(-0.3, 0.3; length=length(regret1.weight))), size(regret1.weight))
+    regret1.bias .= Float32.(range(-0.1, 0.1; length=length(regret1.bias)))
+    regret2.weight .= reshape(Float32.(range(0.25, -0.25; length=length(regret2.weight))), size(regret2.weight))
+    regret2.bias .= Float32.(range(0.05, -0.05; length=length(regret2.bias)))
+    strategy1.weight .= reshape(Float32.(range(-0.2, 0.2; length=length(strategy1.weight))), size(strategy1.weight))
+    strategy1.bias .= Float32.(range(0.2, -0.2; length=length(strategy1.bias)))
+    strategy2.weight .= reshape(Float32.(range(0.15, -0.15; length=length(strategy2.weight))), size(strategy2.weight))
+    strategy2.bias .= Float32.(range(-0.05, 0.05; length=length(strategy2.bias)))
     critic.weight .= reshape(Float32.(range(-0.2, 0.2; length=length(critic.weight))), size(critic.weight))
     critic.bias .= Float32[0.1]
 
-    return AZ.ActorCritic(shared, AZ.MultiActor(actor1, actor2), critic)
+    return AZ.FittedRegretModel(shared, AZ.MultiActor(regret1, regret2), AZ.MultiActor(strategy1, strategy2), critic)
 end
 
 function AZ.getloss(critic::Dense, x; value_target)
@@ -140,6 +164,6 @@ function AZ.getloss(critic::Dense, x; value_target)
     return Flux.Losses.huber_loss(ŷ, value_target), Flux.Losses.mse(ŷ, value_target)
 end
 
-AZ.getloss(actor::AZ.MultiActor, x; policy_target) = AZ.actorloss(actor, x, policy_target)
+AZ.getloss(actor::AZ.MultiActor, x; strategy_target) = AZ.fitted_strategy_loss(actor, x, strategy_target)
 
 end

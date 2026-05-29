@@ -24,12 +24,12 @@ include("callbacks.jl")
 export MetricsCallback
 
 include("nn.jl")
-export ActorCritic, MultiActor
+export FittedRegretModel, MultiActor, StaticFittedRegretModel
 
 include("search/search.jl")
 
 include("solver.jl")
-export AlphaZeroSolver, MCTSParams, AlphaZeroPlanner
+export AlphaZeroSolver, SMOOSParams, AlphaZeroPlanner
 
 include("train.jl")
 export @modeldir, @model

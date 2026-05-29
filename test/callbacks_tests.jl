@@ -12,7 +12,7 @@ using JLD2
     @test AZ.iter2string(12, 2) == "12"
 
     mktempdir() do dir
-        model = Fixtures.simple_actor_critic()
+        model = Fixtures.simple_fitted_regret_model()
         cb = AZ.ModelSaveCallback(dir)
 
         cb((; oracle=model))

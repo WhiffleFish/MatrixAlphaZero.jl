@@ -1,124 +1,26 @@
-struct SearchTree{S}
-    s           ::  Vector{S}                           # [s_idx] -> s
-    s_children  ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> sp_idx
-    n_sa        ::  Vector{Matrix{Int}}                 # [s_idx][a1, a2] -> n_sa
-    n_s         ::  Vector{Int}                         # [s_idx] -> n_s
-    prior       ::  NTuple{2, Vector{Vector{Float32}}}  # [player][s_idx][a_i] -> π(s,a)
-    v           ::  Vector{Matrix{Float64}}             # [s_idx][a1, a2] -> V(T(s, a1, a2))
-    r           ::  Vector{Matrix{Float64}}             # [s_idx][a1, a2] -> r(s, a1, a2)
-    return_sum  ::  Vector{Float64}
-    regret      ::  NTuple{2, Vector{Vector{Float64}}}
-    policy_sum  ::  NTuple{2, Vector{Vector{Float64}}}
+struct SMOOSTree{S}
+    s           :: Vector{S}
+    children    :: Vector{Dict{Tuple{Int,Int}, Int}}
+    regret      :: NTuple{2, Vector{Vector{Float64}}}
+    strategy    :: NTuple{2, Vector{Vector{Float64}}}
 end
 
-const NO_CHILDREN = Matrix{Int}(undef, 0, 0)
-const NO_PRIOR = Vector{Float32}(undef, 0)
-const NO_FLOAT = Vector{Float64}(undef, 0)
-
-function SearchTree(game::MG, s=rand(initialstate(game)))
-    return SearchTree(
+function SMOOSTree(game::MG, s=rand(initialstate(game)))
+    return SMOOSTree(
         [s],
-        Matrix{Int}[NO_CHILDREN],
-        Matrix{Int}[NO_CHILDREN],
-        [0],
-        ([NO_PRIOR], [NO_PRIOR]),
-        [Matrix{Float64}(undef, 0, 0)],
-        [Matrix{Float64}(undef, 0, 0)],
-        [0.0],
-        ([NO_FLOAT], [NO_FLOAT]),
-        ([NO_FLOAT], [NO_FLOAT]),
+        [Dict{Tuple{Int,Int}, Int}()],
+        (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
+        (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
     )
 end
 
-is_leaf(tree::SearchTree, s_idx::Int) = isempty(tree.s_children[s_idx])
-
-function Tree(params::MCTSParams, game::MG, s=rand(initialstate(game)))
-    return SearchTree(game, s)
-end
-
-Tree(game::MG, s=rand(initialstate(game))) = SearchTree(game, s)
-
-function expand_s!(tree::SearchTree, s_idx::Int, game::MG, oracle)
-    if is_leaf(tree, s_idx)
-        _expand_s!(tree, s_idx, game, oracle)
-    end
-end
-
-function _expand_s!(tree::SearchTree, s_idx::Int, game::MG, oracle)
-    s = tree.s[s_idx]
-    A1, A2 = actions(game)
-    na1, na2 = length(A1), length(A2)
-    s_children = zeros(Int, na1, na2)
-    r = zeros(Float64, na1, na2)
-    v = zeros(Float64, na1, na2)
-    counter = length(tree.s) + 1
-    frontier = statetype(game)[]
-    nonterminal = trues(na1 * na2)
-
-    flat_idx = 1
-    for (j, a2) ∈ enumerate(A2), (i, a1) ∈ enumerate(A1)
-        s_children[i, j] = counter
-        sp, r_i = @gen(:sp, :r)(game, s, (a1, a2))
-        push!(frontier, sp)
-        r[i, j] = zs_reward_scalar(r_i)
-        if isterminal(game, sp)
-            nonterminal[flat_idx] = false
-        end
-        counter += 1
-        flat_idx += 1
-    end
-    n_frontier = length(frontier)
-
-    v̂ = batch_state_value(oracle, game, frontier)
-    for i ∈ eachindex(v̂, nonterminal)
-        v[i] = v̂[i] * nonterminal[i]
-    end
-
-    prior = state_policy(oracle, game, s)
-    foreach(tree.prior, prior) do tree_prior, prior_i
-        tree_prior[s_idx] = prior_i
-    end
-
-    tree.s_children[s_idx] = s_children
-    tree.n_sa[s_idx] = zeros(Int, na1, na2)
-    tree.n_s[s_idx] = 0
-    tree.v[s_idx] = v
-    tree.r[s_idx] = r
-    reset_search_node!(tree, s_idx, na1, na2)
-
-    append!(tree.s, frontier)
-    append!(tree.s_children, fill(NO_CHILDREN, n_frontier))
-    append!(tree.n_sa, fill(NO_CHILDREN, n_frontier))
-    append!(tree.n_s, fill(0, n_frontier))
-    append!(tree.v, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
-    append!(tree.r, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
-    foreach(tree.prior) do prior_i
-        append!(prior_i, fill(NO_PRIOR, n_frontier))
-    end
-    append_search_frontier!(tree, n_frontier)
-    return nothing
-end
-
-function oracle_state_value(oracle, game::MG, s)
-    return Float64(only(value(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))))
-end
-
-function oracle_policy(params::MCTSParams, game::MG, tree::SearchTree, s_idx::Int)
-    x, y = state_policy(params.oracle, game, tree.s[s_idx])
-    return Float64.(x), Float64.(y)
-end
-
-function empirical_policy(tree::SearchTree, s_idx::Int)
-    counts = tree.n_sa[s_idx]
-    x = vec(sum(counts; dims=2))
-    y = vec(sum(counts; dims=1))
-    return normalize_or_uniform!(Float64.(x)), normalize_or_uniform!(Float64.(y))
-end
+Tree(::SMOOSParams, game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
+Tree(game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
 
 function normalize_or_uniform!(x::AbstractVector)
     isempty(x) && return x
     s = sum(x)
-    if s > 0
+    if isfinite(s) && s > 0
         x ./= s
     else
         x .= inv(length(x))
@@ -126,24 +28,72 @@ function normalize_or_uniform!(x::AbstractVector)
     return x
 end
 
+normalized_or_uniform(x::AbstractVector) = normalize_or_uniform!(Float64.(copy(x)))
+
 eps_exploration(p, ϵ) = inv(length(p)) .* ϵ .+ (1 .- ϵ) .* p
 
+function regret_matching_policy(regret::AbstractVector)
+    policy = zeros(Float64, length(regret))
+    return match!(policy, regret)
+end
+
 function action_idx_from_probs(x, y)
-    x = normalize_or_uniform!(Float64.(x))
-    y = normalize_or_uniform!(Float64.(y))
+    x = normalized_or_uniform(x)
+    y = normalized_or_uniform(y)
     return CartesianIndex(
         rand(Categorical(x)),
         rand(Categorical(y)),
     )
 end
 
-function node_matrix_game(tree::SearchTree, s_idx::Int, γ::Float64)
-    return tree.r[s_idx] .+ γ .* tree.v[s_idx]
+function oracle_state_value(oracle, game::MG, s)
+    return Float64(only(value(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))))
 end
 
-node_return_sum(tree::SearchTree, s_idx::Int) = tree.return_sum[s_idx]
+function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSParams)
+    isempty(tree.regret[1][h]) || return nothing
+    s = tree.s[h]
+    A1, A2 = actions(game)
+    tau = params.transfer_weight * params.transfer_steps
+    r̂ = state_regret(params.oracle, game, s)
+    ŝ = state_strategy(params.oracle, game, s)
+    tree.regret[1][h] = tau .* Float64.(r̂[1])
+    tree.regret[2][h] = tau .* Float64.(r̂[2])
+    tree.strategy[1][h] = tau .* normalized_or_uniform(ŝ[1])
+    tree.strategy[2][h] = tau .* normalized_or_uniform(ŝ[2])
+    @assert length(tree.regret[1][h]) == length(A1)
+    @assert length(tree.regret[2][h]) == length(A2)
+    return nothing
+end
 
-function add_return_sum!(tree::SearchTree, s_idx::Int, value::Float64)
-    tree.return_sum[s_idx] += value
-    return tree.return_sum[s_idx]
+function child_index!(tree::SMOOSTree, h::Int, a::CartesianIndex{2}, sp)
+    key = Tuple(a)
+    return get!(tree.children[h], key) do
+        push!(tree.s, sp)
+        push!(tree.children, Dict{Tuple{Int,Int}, Int}())
+        push!(tree.regret[1], Float64[])
+        push!(tree.regret[2], Float64[])
+        push!(tree.strategy[1], Float64[])
+        push!(tree.strategy[2], Float64[])
+        return length(tree.s)
+    end
+end
+
+function root_targets(params::SMOOSParams, tree::SMOOSTree, game::MG, h::Int=1)
+    s = tree.s[h]
+    expand_node!(tree, h, game, params)
+    denom = params.transfer_weight * params.transfer_steps + params.oos_iterations
+    denom = denom > 0 ? denom : 1.0
+    A1, A2 = actions(game)
+    yr = (
+        Float64.(tree.regret[1][h]) ./ denom,
+        Float64.(tree.regret[2][h]) ./ denom,
+    )
+    ys = (
+        Float64.(tree.strategy[1][h]) ./ denom,
+        Float64.(tree.strategy[2][h]) ./ denom,
+    )
+    length(yr[1]) == length(A1) || error("player 1 regret target has wrong action dimension")
+    length(yr[2]) == length(A2) || error("player 2 regret target has wrong action dimension")
+    return yr, ys
 end

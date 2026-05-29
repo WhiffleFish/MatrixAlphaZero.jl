@@ -1,23 +1,22 @@
-@kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, MP}
-    max_steps       ::  Int     = 10_000_000
-    num_steps       ::  Int     = 2048 * 8
+@kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, SP}
+    max_steps       :: Int     = 10_000_000
+    num_steps       :: Int     = 2048 * 8
 
-    # MCTS
-    oracle          ::  O
-    mcts_params     ::  MP      = MCTSParams(;oracle)
+    oracle          :: O
+    smoos_params    :: SP      = SMOOSParams(;oracle)
 
-    # Training args
-    update_epochs   ::  Int     = 1
-    num_batches     ::  Int     = 4
-    lr              ::  Float32 = 3f-4
-    lr_decay        ::  Float32 = 1.0f0  # multiplicative LR factor applied each iteration (1 = no decay)
-    ema_decay       ::  Float32 = 0.99f0
+    update_epochs   :: Int     = 1
+    num_batches     :: Int     = 4
+    lr              :: Float32 = 3f-4
+    lr_decay        :: Float32 = 1.0f0
+    ema_decay       :: Float32 = 0.99f0
+    gae_lambda      :: Float64 = 0.95
 
-    optimiser       ::  OPT     = Flux.Optimisers.OptimiserChain(
+    optimiser       :: OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(0.5f0),
         Flux.Optimisers.Adam(lr)
     )
-    rng             ::  RNG = Random.default_rng()
+    rng             :: RNG = Random.default_rng()
 end
 
 function ema_update!(ema_model, model, decay::Real)
@@ -27,39 +26,30 @@ function ema_update!(ema_model, model, decay::Real)
     return ema_model
 end
 
-
-@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle} <: Policy
-    game            ::  G
-    oracle          ::  Oracle
-    search_style    ::  RegretMatchingSearch
-    max_iter        ::  Int
-    max_time        ::  Float64
-    max_depth       ::  Int
+@kwdef mutable struct AlphaZeroPlanner{G<:MG, Oracle, SP} <: Policy
+    game            :: G
+    oracle          :: Oracle
+    smoos_params    :: SP
 end
 
 function AlphaZeroPlanner(
         game::MG,
         oracle;
-        max_iter        =   0,
-        max_time        =   Inf,
-        max_depth       =   typemax(Int),
-        search_style    = RegretMatchingSearch()
+        oos_iterations  = 0,
+        transfer_steps  = 0,
+        transfer_weight = 1.0,
+        max_depth       = typemax(Int),
+        ϵ               = t -> 0.0,
+        smoos_params    = SMOOSParams(; oracle, oos_iterations, transfer_steps, transfer_weight, max_depth, ϵ),
     )
-    return AlphaZeroPlanner(;
-        game,
-        oracle,
-        search_style,
-        max_iter,
-        max_time,
-        max_depth,
-    )
+    return AlphaZeroPlanner(; game, oracle, smoos_params=with_oracle(smoos_params, oracle))
 end
 
 function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
     Flux.loadmodel!(planner.oracle, JLD2.load(path)["model_state"])
 end
 
-function Flux.loadmodel!(oracle::ActorCritic, path::String)
+function Flux.loadmodel!(oracle::FittedRegretModel, path::String)
     Flux.loadmodel!(oracle, JLD2.load(path)["model_state"])
 end
 
@@ -68,48 +58,42 @@ function load_oracle(path)
         return jldopen(joinpath(path, "oracle.jld2"))["oracle"]
     elseif isfile(path)
         return jldopen(path)["oracle"]
-    else # when would this ever be hit? lmao
+    else
         error("$(path) is neither file nor dir")
     end
 end
 
-AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) = AlphaZeroPlanner(
-    game, sol.mcts_params.oracle;
-    max_iter        = sol.mcts_params.tree_queries,
-    max_time        = sol.mcts_params.max_time,
-    max_depth       = sol.mcts_params.max_depth,
-    search_style    = sol.mcts_params.search_style,
-    kwargs...
-)
+AlphaZeroPlanner(sol::AlphaZeroSolver, game::MG; kwargs...) =
+    AlphaZeroPlanner(game, sol.smoos_params.oracle; smoos_params=sol.smoos_params, kwargs...)
 
-AlphaZeroPlanner(game::MG, sol::AlphaZeroSolver; kwargs...) = AlphaZeroPlanner(sol, game; kwargs...)
+AlphaZeroPlanner(game::MG, sol::AlphaZeroSolver; kwargs...) =
+    AlphaZeroPlanner(sol, game; kwargs...)
 
-AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) = AlphaZeroPlanner(
-    planner.game,
-    planner.oracle;
-    max_iter        =   planner.max_iter,
-    max_time        =   planner.max_time,
-    max_depth       =   planner.max_depth,
-    search_style    =   planner.search_style,
-    kwargs...
-)
+AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) =
+    AlphaZeroPlanner(planner.game, planner.oracle; smoos_params=planner.smoos_params, kwargs...)
 
-function MCTSParams(planner::AlphaZeroPlanner; kwargs...)
-    return MCTSParams(;
-        tree_queries = planner.max_iter,
-        max_depth = planner.max_depth,
-        max_time = planner.max_time,
-        search_style = planner.search_style,
-        oracle = planner.oracle,
+SMOOSParams(planner::AlphaZeroPlanner; kwargs...) =
+    SMOOSParams(; oracle=planner.oracle,
+        oos_iterations=planner.smoos_params.oos_iterations,
+        transfer_steps=planner.smoos_params.transfer_steps,
+        transfer_weight=planner.smoos_params.transfer_weight,
+        max_depth=planner.smoos_params.max_depth,
+        ϵ=planner.smoos_params.ϵ,
         kwargs...
     )
-end
 
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
-    (;oracle, game, max_iter, max_time, max_depth, search_style) = policy
+    (; oracle, game, smoos_params) = policy
     A1, A2 = actions(game)
-    (x,y,v), info = search_info(MCTSParams(;oracle, tree_queries=max_iter, max_depth, max_time, search_style), game, s)
-    return ProductDistribution(SparseCat(A1,x), SparseCat(A2,y)), (;info..., v)
+    if isterminal(game, s)
+        x, y = uniform(length(A1)), uniform(length(A2))
+        return ProductDistribution(SparseCat(A1, x), SparseCat(A2, y)), (; v=0.0)
+    end
+    (yr, ys), info = fitted_smoos_info(with_oracle(smoos_params, oracle), game, s; ϵ=smoos_params.ϵ(1))
+    x = normalized_or_uniform(ys[1])
+    y = normalized_or_uniform(ys[2])
+    v = oracle_state_value(oracle, game, s)
+    return ProductDistribution(SparseCat(A1, x), SparseCat(A2, y)), (; info..., regret=yr, strategy=ys, v)
 end
 
 MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, s))
@@ -117,8 +101,9 @@ MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     sol.max_steps > 0 || throw(ArgumentError("max_steps must be positive"))
     sol.num_steps > 0 || throw(ArgumentError("num_steps must be positive"))
+    0 <= sol.gae_lambda <= 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
     distributed = Distributed.nprocs() > 1
-    online_oracle = sol.mcts_params.oracle
+    online_oracle = sol.smoos_params.oracle
     ema_oracle = deepcopy(online_oracle)
     progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
@@ -130,13 +115,13 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     while steps_done < sol.max_steps
         update += 1
         target_steps = min(sol.num_steps, sol.max_steps - steps_done)
-        ϵ = sol.mcts_params.ϵ(update)
+        ϵ = sol.smoos_params.ϵ(update)
         selfplay_oracle = ema_oracle
-        mcts_params = with_oracle(sol.mcts_params, selfplay_oracle)
+        smoos_params = with_oracle(sol.smoos_params, selfplay_oracle)
         hists = if distributed
-            distributed_mcts(progress, game, mcts_params, target_steps, s0; ϵ, steps_done)
+            distributed_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, gae_lambda=sol.gae_lambda)
         else
-            serial_mcts(progress, game, mcts_params, target_steps, s0; ϵ, steps_done)
+            serial_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, gae_lambda=sol.gae_lambda)
         end
         batch = merge_histories(hists)
         samples_added = length(batch.v)
@@ -158,28 +143,81 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         )
         call(cb, cb_info)
         prev_ema_oracle = deepcopy(ema_oracle)
-        # decay!(sol.optimiser, 0.9)
     end
     finish!(progress)
-    planner_oracle = ema_oracle
-    planner = AlphaZeroPlanner(
-        game, planner_oracle;
-        max_iter      = sol.mcts_params.tree_queries,
-        max_time      = sol.mcts_params.max_time,
-        max_depth     = sol.mcts_params.max_depth,
-        search_style  = sol.mcts_params.search_style
-    )
-    return planner
+    return AlphaZeroPlanner(game, ema_oracle; smoos_params=with_oracle(sol.smoos_params, ema_oracle))
 end
 
-function distributed_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0)
+function lambda_gae_targets(rewards, values, bootstrap, γ, λ)
+    targets = Vector{Float64}(undef, length(rewards))
+    adv = 0.0
+    vnext = Float64(bootstrap)
+    for t ∈ reverse(eachindex(rewards))
+        δ = Float64(rewards[t]) + γ * vnext - Float64(values[t])
+        adv = δ + γ * λ * adv
+        targets[t] = adv + Float64(values[t])
+        vnext = Float64(values[t])
+    end
+    return targets
+end
+
+function smoos_sim(params::SMOOSParams, game::MG, s; progress=false, ϵ=0.30, gae_lambda=0.95)
+    d = params.max_depth
+    A1, A2 = actions(game)
+    γ = discount(game)
+    t = 1
+    rewards = Float64[]
+    values = Float64[]
+    search_time_hist = Float64[]
+    s_hist = Vector{Float32}[]
+    regret_hist = (Vector{Float64}[], Vector{Float64}[])
+    strategy_hist = (Vector{Float64}[], Vector{Float64}[])
+    p = Progress(d, enabled=progress)
+
+    while (t < d) && !isterminal(game, s)
+        search_start = time()
+        (yr, ys), _info = fitted_smoos_info(params, game, s; ϵ)
+        search_time = time() - search_start
+
+        x = normalized_or_uniform(ys[1])
+        y = normalized_or_uniform(ys[2])
+        a_idxs = Tuple(action_idx_from_probs(x, y))
+        a = (A1[a_idxs[1]], A2[a_idxs[2]])
+        sp, r = @gen(:sp, :r)(game, s, a)
+        r = zs_reward_scalar(r)
+        push!(search_time_hist, search_time)
+        push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
+        push!(values, oracle_state_value(params.oracle, game, s))
+        push!(rewards, Float64(r))
+        push!(regret_hist[1], Float64.(yr[1]))
+        push!(regret_hist[2], Float64.(yr[2]))
+        push!(strategy_hist[1], Float64.(ys[1]))
+        push!(strategy_hist[2], Float64.(ys[2]))
+        t += 1
+        s = sp
+        next!(p)
+    end
+    bootstrap = isterminal(game, s) ? 0.0 : oracle_state_value(params.oracle, game, s)
+    v_hist = lambda_gae_targets(rewards, values, bootstrap, γ, gae_lambda)
+    finish!(p)
+    return (;
+        s = s_hist,
+        r = rewards,
+        v = v_hist,
+        search_time = search_time_hist,
+        regret = regret_hist,
+        strategy = strategy_hist,
+    )
+end
+
+function distributed_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     n_tasks = max(1, Distributed.nworkers())
     while collected < num_steps
         task_count = min(n_tasks, num_steps - collected)
         new_hists = pmap(1:task_count) do _
-            mcts_sim(mcts_params, game, rand(s0); ϵ)
+            smoos_sim(params, game, rand(s0); ϵ, gae_lambda)
         end
         made_progress = false
         for hist in new_hists
@@ -198,11 +236,11 @@ function distributed_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.
     return hists
 end
 
-function serial_mcts(progress, game, mcts_params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0)
+function serial_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     while collected < num_steps
-        hist = trim_history(mcts_sim(mcts_params, game, rand(s0); ϵ), num_steps - collected)
+        hist = trim_history(smoos_sim(params, game, rand(s0); ϵ, gae_lambda), num_steps - collected)
         n = length(hist.v)
         iszero(n) && break
         push!(hists, hist)
@@ -219,7 +257,8 @@ function trim_history(hist::NamedTuple, max_steps::Int)
         r = hist.r[1:n],
         v = hist.v[1:n],
         search_time = hist.search_time[1:n],
-        policy = (hist.policy[1][1:n], hist.policy[2][1:n]),
+        regret = (hist.regret[1][1:n], hist.regret[2][1:n]),
+        strategy = (hist.strategy[1][1:n], hist.strategy[2][1:n]),
     )
 end
 
@@ -227,14 +266,18 @@ function merge_histories(hists)
     s = Vector{Float32}[]
     r = Float64[]
     v = Float64[]
+    r1 = Vector{Float64}[]
+    r2 = Vector{Float64}[]
     p1 = Vector{Float64}[]
     p2 = Vector{Float64}[]
     for hist in hists
         append!(s, hist.s)
         append!(r, hist.r)
         append!(v, hist.v)
-        append!(p1, hist.policy[1])
-        append!(p2, hist.policy[2])
+        append!(r1, hist.regret[1])
+        append!(r2, hist.regret[2])
+        append!(p1, hist.strategy[1])
+        append!(p2, hist.strategy[2])
     end
-    return (; s, r, v, policy=(p1, p2))
+    return (; s, r, v, regret=(r1, r2), strategy=(p1, p2))
 end
