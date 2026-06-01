@@ -28,6 +28,13 @@ export @figdir
 
 include("exploitability.jl")
 
+include("matchups.jl")
+export JointPolicy, SinglePlayerAlphaZeroPolicy
+export FunctionPlayerPolicy, StdErrResult
+export evaluate_joint_policy
+
+include("dubin.jl")
+
 include("argparse.jl")
 
 include("vis.jl")
