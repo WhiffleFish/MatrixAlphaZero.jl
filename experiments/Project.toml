@@ -18,7 +18,7 @@ SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 [sources]
 ExperimentTools = {path = "../ExperimentTools"}
 FictitiousPlay = {url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
-MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
+MarkovGames = {rev = "main", url = "git@github.com:WhiffleFish/MarkovGames.jl.git"}
 MatrixAlphaZero = {path = ".."}
 POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
 SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}

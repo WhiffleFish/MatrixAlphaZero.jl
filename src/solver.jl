@@ -111,7 +111,16 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     cb_oracle = ema_oracle
     steps_done = 0
     update = 0
-    call(cb, (;oracle=cb_oracle, iter=0, update=0, steps_done, max_steps=sol.max_steps, online_oracle, ema_oracle))
+    call(cb, (;
+        oracle=cb_oracle,
+        iter=0,
+        update=0,
+        steps_done,
+        max_steps=sol.max_steps,
+        exploration_epsilon=sol.smoos_params.ϵ(1),
+        online_oracle,
+        ema_oracle,
+    ))
     while steps_done < sol.max_steps
         update += 1
         target_steps = min(sol.num_steps, sol.max_steps - steps_done)
@@ -134,7 +143,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         end
         cb_oracle = ema_oracle
         cb_info = merge(
-            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, online_oracle, ema_oracle),
+            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, exploration_epsilon=ϵ, online_oracle, ema_oracle),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),

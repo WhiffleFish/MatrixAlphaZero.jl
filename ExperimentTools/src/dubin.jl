@@ -3,9 +3,9 @@ module Dubin
 using LinearAlgebra
 using MarkovGames
 using MatrixAlphaZero
-using ExperimentTools: FunctionPlayerPolicy, JointPolicy
 
 const AZ = MatrixAlphaZero
+const Tools = parentmodule(@__MODULE__)
 
 export DubinOutcome
 export dubin_attacker_heuristic, dubin_defender_heuristic, dubin_heuristic_joint_policy
@@ -68,7 +68,7 @@ function dubin_attacker_heuristic(
         evade_weight::Float64=1.0,
         goal_weight::Float64=1.0,
     )
-    return FunctionPlayerPolicy(game, 1) do game, s
+    return Tools.FunctionPlayerPolicy(game, 1) do game, s
         attacker = s.attacker[1:2]
         defender = s.defender[1:2]
         goal = game.goal.center
@@ -85,7 +85,7 @@ function dubin_attacker_heuristic(
 end
 
 function dubin_defender_heuristic(game::MG)
-    return FunctionPlayerPolicy(game, 2) do game, s
+    return Tools.FunctionPlayerPolicy(game, 2) do game, s
         attacker = s.attacker[1:2]
         defender = s.defender[1:2]
         desired = attacker .- defender
@@ -94,7 +94,7 @@ function dubin_defender_heuristic(game::MG)
 end
 
 function dubin_heuristic_joint_policy(game::MG; attacker_kwargs...)
-    return JointPolicy(dubin_attacker_heuristic(game; attacker_kwargs...), dubin_defender_heuristic(game))
+    return Tools.JointPolicy(dubin_attacker_heuristic(game; attacker_kwargs...), dubin_defender_heuristic(game))
 end
 
 end # module Dubin

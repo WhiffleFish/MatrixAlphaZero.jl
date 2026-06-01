@@ -40,6 +40,9 @@ function (cb::MetricsCallback)(info::NamedTuple)
         println("  self-play:   ep_len=$(_r(info.mean_ep_length, 1))  reward μ=$(_r3(info.mean_reward))  σ=$(_r3(info.reward_std))")
         hasproperty(info, :mean_search_time) && println("  search:      mean=$(_r3(1_000 * info.mean_search_time))ms  total=$(_r2(info.total_search_time))s  n=$(info.search_count)")
     end
+    if hasproperty(info, :exploration_epsilon)
+        println("  exploration: epsilon=$(_r3(info.exploration_epsilon))")
+    end
     if hasproperty(info, :batch_size)
         println("  batch:       size=$(info.batch_size)  steps=$(get(info, :steps_done, info.batch_size))/$(get(info, :max_steps, "?"))")
     end

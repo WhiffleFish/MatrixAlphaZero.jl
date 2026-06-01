@@ -64,6 +64,44 @@ function _default_batch_accumulators(game::MG)
     )
 end
 
+_as_tuple(x::Tuple) = x
+_as_tuple(x::AbstractVector) = Tuple(x)
+_as_tuple(x) = (x,)
+
+function _serial_stat_rollouts(
+        game::MG,
+        joint_policy::Policy,
+        n::Integer;
+        accumulators,
+        batch_accumulators,
+        max_steps::Int,
+        eps::Float64,
+        initialstates,
+        metadata=NamedTuple(),
+    )
+    rollout_accumulators = _as_tuple(accumulators)
+    batch_stats = deepcopy((
+        MeanResult(:reward; name=:reward, init=zero(MarkovGames.reward_type(game))),
+        _as_tuple(batch_accumulators)...,
+    ))
+    foreach(reset!, batch_stats)
+
+    for i in 1:n
+        sim_rng = Random.default_rng()
+        initial_state = isnothing(initialstates) ? rand(sim_rng, initialstate(game)) : initialstates[i]
+        simulator = StatRolloutSimulator(;
+            rng = sim_rng,
+            eps,
+            max_steps,
+            accumulators = rollout_accumulators,
+        )
+        result = POMDPs.simulate(simulator, game, joint_policy, initial_state)
+        foreach(stat -> observe_sim!(stat, result), batch_stats)
+    end
+
+    return batch_result(batch_stats)
+end
+
 function evaluate_joint_policy(
         game::MG,
         joint_policy::Policy,
@@ -77,22 +115,37 @@ function evaluate_joint_policy(
         pool=nothing,
         show_progress::Bool=true,
         proc_warn::Bool=false,
+        parallel::Bool=true,
     )
     rollout_accumulators = isnothing(accumulators) ? _default_rollout_accumulators() : accumulators
     batch_stats = isnothing(batch_accumulators) ? _default_batch_accumulators(game) : batch_accumulators
-    result = run_stats_parallel(
-        game,
-        joint_policy,
-        n;
-        accumulators = rollout_accumulators,
-        batch_accumulators = batch_stats,
-        max_steps,
-        eps,
-        initialstates,
-        metadata,
-        pool,
-        show_progress,
-        proc_warn,
-    )
+    result = if parallel
+        run_stats_parallel(
+            game,
+            joint_policy,
+            n;
+            accumulators = rollout_accumulators,
+            batch_accumulators = batch_stats,
+            max_steps,
+            eps,
+            initialstates,
+            metadata,
+            pool,
+            show_progress,
+            proc_warn,
+        )
+    else
+        _serial_stat_rollouts(
+            game,
+            joint_policy,
+            n;
+            accumulators = rollout_accumulators,
+            batch_accumulators = batch_stats,
+            max_steps,
+            eps,
+            initialstates,
+            metadata,
+        )
+    end
     return merge((; n=Int(n), max_steps, eps), result)
 end

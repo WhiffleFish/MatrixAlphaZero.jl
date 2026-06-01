@@ -60,6 +60,7 @@ const WANDB_PROGRESS_KEYS = Set((
     :steps_done,
     :max_steps,
     :samples_added,
+    :exploration_epsilon,
 ))
 
 function wandb_metric_key(k::Symbol)
