@@ -235,7 +235,6 @@ solver = AZ.AlphaZeroSolver(
 wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
     WandbCallback(
         project = "Matrix AlphaZero",
-        name = "$(EXPERIMENT_NAME)-regret-transfer-smoos",
         group = EXPERIMENT_NAME,
         config = Dict(
             "experiment" => EXPERIMENT_NAME,
