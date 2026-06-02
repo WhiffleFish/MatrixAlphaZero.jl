@@ -84,6 +84,8 @@ using Random
     @test length(hist.r) == 2
     @test length(hist.v) == 2
     @test length(hist.search_time) == 2
+    shallow_hist = AZ.smoos_sim(rollout_params, Fixtures.TwoStepGame(), 0; progress=false, ϵ=0.0, sim_depth=1, gae_lambda=1.0)
+    @test length(shallow_hist.s) == 1
     @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[1][1])), 1.0; atol=1e-6)
     @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[2][1])), 1.0; atol=1e-6)
 end

@@ -23,7 +23,8 @@ args = ExperimentTools.parse_commandline(
     update_epochs = 1,
     num_batches = 4,
     tree_queries = 500,
-    max_depth = 50,
+    max_depth = 5,
+    sim_depth = 50,
     runs = 16,
     every = 1,
 )
@@ -35,7 +36,8 @@ num_steps = args["num_steps"]
 update_epochs = args["update_epochs"]
 num_batches = args["num_batches"]
 oos_iterations = args["tree_queries"]
-max_depth = args["max_depth"]
+search_depth = args["max_depth"]
+sim_depth = args["sim_depth"]
 eval_runs = args["runs"]
 eval_every = args["every"]
 
@@ -213,6 +215,7 @@ solver = AZ.AlphaZeroSolver(
     oracle = oracle,
     max_steps = max_steps,
     num_steps = num_steps,
+    sim_depth = sim_depth,
     update_epochs = update_epochs,
     num_batches = num_batches,
     lr = lr,
@@ -223,7 +226,7 @@ solver = AZ.AlphaZeroSolver(
     smoos_params = AZ.SMOOSParams(;
         oracle,
         oos_iterations,
-        max_depth,
+        max_depth = search_depth,
         τ = 0.0,
         ϵ = epsilon_schedule,
     ),
@@ -238,7 +241,8 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "experiment" => EXPERIMENT_NAME,
             "game" => "DubinMG",
             "oos_iterations" => oos_iterations,
-            "max_depth" => max_depth,
+            "search_depth" => search_depth,
+            "sim_depth" => sim_depth,
             "max_steps" => max_steps,
             "num_steps" => num_steps,
             "update_epochs" => update_epochs,
@@ -264,10 +268,10 @@ stat_eval_cb = StatRolloutEvalCallback(
     game,
     s0,
     eval_runs,
-    max_depth,
+    sim_depth,
     eval_every,
     oos_iterations,
-    max_depth,
+    search_depth,
     wandb_cb,
 )
 

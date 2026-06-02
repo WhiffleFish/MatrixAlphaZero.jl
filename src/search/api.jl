@@ -1,7 +1,7 @@
 @kwdef struct SMOOSParams{E, Oracle}
     oos_iterations  :: Int      = 150
     τ               :: Float64  = 0.0
-    max_depth       :: Int      = 50
+    max_depth       :: Int      = 5
     ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
     oracle          :: Oracle
 end

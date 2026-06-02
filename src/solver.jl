@@ -1,6 +1,7 @@
 @kwdef struct AlphaZeroSolver{OPT, RNG<:Random.AbstractRNG, O, SP}
     max_steps       :: Int     = 10_000_000
     num_steps       :: Int     = 2048 * 8
+    sim_depth       :: Int     = 50
 
     oracle          :: O
     smoos_params    :: SP      = SMOOSParams(;oracle)
@@ -103,6 +104,7 @@ MarkovGames.behavior(policy::AlphaZeroPlanner, s) = first(behavior_info(policy, 
 function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game), cb=(info)->())
     sol.max_steps > 0 || throw(ArgumentError("max_steps must be positive"))
     sol.num_steps > 0 || throw(ArgumentError("num_steps must be positive"))
+    sol.sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
     0 <= sol.gae_lambda <= 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
     distributed = Distributed.nprocs() > 1
     online_oracle = sol.smoos_params.oracle
@@ -120,6 +122,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         update=0,
         steps_done,
         max_steps=sol.max_steps,
+        sim_depth=sol.sim_depth,
         exploration_epsilon=sol.smoos_params.ϵ(1),
         transfer_tau,
         online_oracle,
@@ -132,9 +135,9 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         selfplay_oracle = ema_oracle
         smoos_params = with_oracle(sol.smoos_params, selfplay_oracle; τ=transfer_tau)
         hists = if distributed
-            distributed_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, gae_lambda=sol.gae_lambda)
+            distributed_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, sim_depth=sol.sim_depth, gae_lambda=sol.gae_lambda)
         else
-            serial_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, gae_lambda=sol.gae_lambda)
+            serial_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, sim_depth=sol.sim_depth, gae_lambda=sol.gae_lambda)
         end
         batch = merge_histories(hists)
         samples_added = length(batch.v)
@@ -148,7 +151,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         end
         cb_oracle = ema_oracle
         cb_info = merge(
-            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, exploration_epsilon=ϵ, transfer_tau, online_oracle, ema_oracle),
+            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, exploration_epsilon=ϵ, transfer_tau, online_oracle, ema_oracle),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),
@@ -175,8 +178,8 @@ function lambda_gae_targets(rewards, values, bootstrap, γ, λ)
     return targets
 end
 
-function smoos_sim(params::SMOOSParams, game::MG, s; progress=false, ϵ=0.30, gae_lambda=0.95)
-    d = params.max_depth
+function smoos_sim(params::SMOOSParams, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth, gae_lambda=0.95)
+    sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
     A1, A2 = actions(game)
     γ = discount(game)
     t = 1
@@ -186,9 +189,9 @@ function smoos_sim(params::SMOOSParams, game::MG, s; progress=false, ϵ=0.30, ga
     s_hist = Vector{Float32}[]
     regret_hist = (Vector{Float64}[], Vector{Float64}[])
     strategy_hist = (Vector{Float64}[], Vector{Float64}[])
-    p = Progress(d, enabled=progress)
+    p = Progress(sim_depth, enabled=progress)
 
-    while (t < d) && !isterminal(game, s)
+    while (t <= sim_depth) && !isterminal(game, s)
         search_start = time()
         (yr, ys), _info = fitted_smoos_info(params, game, s; ϵ)
         search_time = time() - search_start
@@ -224,14 +227,14 @@ function smoos_sim(params::SMOOSParams, game::MG, s; progress=false, ϵ=0.30, ga
     )
 end
 
-function distributed_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, gae_lambda=0.95)
+function distributed_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=params.max_depth, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     n_tasks = max(1, Distributed.nworkers())
     while collected < num_steps
         task_count = min(n_tasks, num_steps - collected)
         new_hists = pmap(1:task_count) do _
-            smoos_sim(params, game, rand(s0); ϵ, gae_lambda)
+            smoos_sim(params, game, rand(s0); ϵ, sim_depth, gae_lambda)
         end
         made_progress = false
         for hist in new_hists
@@ -250,11 +253,11 @@ function distributed_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, 
     return hists
 end
 
-function serial_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, gae_lambda=0.95)
+function serial_smoos(progress, game, params, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=params.max_depth, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     while collected < num_steps
-        hist = trim_history(smoos_sim(params, game, rand(s0); ϵ, gae_lambda), num_steps - collected)
+        hist = trim_history(smoos_sim(params, game, rand(s0); ϵ, sim_depth, gae_lambda), num_steps - collected)
         n = length(hist.v)
         iszero(n) && break
         push!(hists, hist)

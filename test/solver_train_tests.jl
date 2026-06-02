@@ -42,6 +42,7 @@ using MarkovGames
     solver = AZ.AlphaZeroSolver(
         max_steps=2,
         num_steps=2,
+        sim_depth=7,
         oracle=train_oracle,
         smoos_params=AZ.SMOOSParams(oos_iterations=0, max_depth=3, oracle=train_oracle),
         update_epochs=1,
@@ -50,6 +51,7 @@ using MarkovGames
     )
     @test AZ.AlphaZeroPlanner(solver, game).smoos_params.oos_iterations == 0
     @test AZ.AlphaZeroPlanner(game, solver).smoos_params.max_depth == 3
+    @test solver.sim_depth == 7
 
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
@@ -129,14 +131,17 @@ using MarkovGames
 
     callback_iters = Int[]
     callback_steps = Int[]
+    callback_sim_depths = Int[]
     callback_has_minibatches = Bool[]
     planner_out = MarkovGames.solve(solver, game; cb=info -> begin
         push!(callback_iters, info.iter)
         hasproperty(info, :steps_done) && push!(callback_steps, info.steps_done)
+        hasproperty(info, :sim_depth) && push!(callback_sim_depths, info.sim_depth)
         push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
     end)
     @test planner_out isa AZ.AlphaZeroPlanner
     @test callback_steps[end] == 2
     @test callback_has_minibatches == [false, true]
     @test callback_iters == [0, 1]
+    @test callback_sim_depths == [7, 7]
 end

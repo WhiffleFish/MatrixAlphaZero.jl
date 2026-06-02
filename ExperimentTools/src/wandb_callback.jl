@@ -59,6 +59,7 @@ const WANDB_PROGRESS_KEYS = Set((
     :update,
     :steps_done,
     :max_steps,
+    :sim_depth,
     :samples_added,
     :exploration_epsilon,
     :transfer_tau,

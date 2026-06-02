@@ -5,6 +5,7 @@ function parse_commandline(;
         num_batches     = 1,
         tree_queries    = 20,
         max_depth       = 50,
+        sim_depth      = nothing,
         runs            = nothing,
         checkpoint      = nothing,
         every           = nothing,
@@ -39,6 +40,14 @@ function parse_commandline(;
             default     = max_depth
     end
 
+    if !isnothing(sim_depth)
+        @add_arg_table! s begin
+            "--sim_depth"
+                arg_type = Int
+                default = sim_depth
+        end
+    end
+
     if !isnothing(runs)
         @add_arg_table! s begin
             "--runs"
@@ -71,7 +80,10 @@ function parse_commandline(;
         parsed_args["update_epochs"] = 1
         parsed_args["num_batches"] = 1
         parsed_args["tree_queries"] = 1
-        parsed_args["max_depth"] = 10
+        parsed_args["max_depth"] = min(max_depth, 10)
+        if !isnothing(sim_depth)
+            parsed_args["sim_depth"] = min(sim_depth, 10)
+        end
         if !isnothing(runs)
             parsed_args["runs"] = 2
         end
