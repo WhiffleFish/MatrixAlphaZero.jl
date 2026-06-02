@@ -68,13 +68,12 @@ function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSParams)
     isempty(tree.regret[1][h]) || return nothing
     s = tree.s[h]
     A1, A2 = actions(game)
-    tau = params.transfer_weight * params.transfer_steps
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
-    tree.regret[1][h] = tau .* Float64.(r̂[1])
-    tree.regret[2][h] = tau .* Float64.(r̂[2])
-    tree.strategy[1][h] = tau .* normalized_or_uniform(ŝ[1])
-    tree.strategy[2][h] = tau .* normalized_or_uniform(ŝ[2])
+    tree.regret[1][h] = params.τ .* Float64.(r̂[1])
+    tree.regret[2][h] = params.τ .* Float64.(r̂[2])
+    tree.strategy[1][h] = params.τ .* normalized_or_uniform(ŝ[1])
+    tree.strategy[2][h] = params.τ .* normalized_or_uniform(ŝ[2])
     @assert length(tree.regret[1][h]) == length(A1)
     @assert length(tree.regret[2][h]) == length(A2)
     return nothing
@@ -96,7 +95,7 @@ end
 function root_targets(params::SMOOSParams, tree::SMOOSTree, game::MG, h::Int=1)
     s = tree.s[h]
     expand_node!(tree, h, game, params)
-    denom = params.transfer_weight * params.transfer_steps + params.oos_iterations
+    denom = params.τ + params.oos_iterations
     denom = denom > 0 ? denom : 1.0
     A1, A2 = actions(game)
     yr = (

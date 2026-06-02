@@ -13,7 +13,7 @@ using D3Trees
         regrets=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
         strategies=Dict(0f0 => (Float32[0.8, 0.2], Float32[0.1, 0.9])),
     )
-    params = AZ.SMOOSParams(oos_iterations=1, transfer_steps=1, transfer_weight=1.0, max_depth=2, oracle=oracle)
+    params = AZ.SMOOSParams(oos_iterations=1, τ=1.0, max_depth=2, oracle=oracle)
     (_, _), info = AZ.fitted_smoos_info(params, game, false; ϵ=0.0)
     tree = info.tree
 

@@ -23,17 +23,20 @@ using MarkovGames
         game,
         oracle;
         oos_iterations=3,
-        transfer_steps=4,
-        transfer_weight=0.5,
+        τ=2.0,
         max_depth=5,
     )
     @test planner.smoos_params.oos_iterations == 3
-    @test planner.smoos_params.transfer_steps == 4
+    @test planner.smoos_params.τ == 2.0
 
     params = AZ.SMOOSParams(planner)
     @test params.oos_iterations == 3
+    @test params.τ == 2.0
     @test params.max_depth == 5
     @test AZ.with_oracle(params, :new_oracle).oracle == :new_oracle
+    @test AZ.with_oracle(params, :new_oracle; τ=4.0).τ == 4.0
+    @test AZ.advance_transfer_tau(0.0, 3, 0.5) == 1.5
+    @test AZ.advance_transfer_tau(1.5, 3, 0.5) == 2.25
 
     train_oracle = Fixtures.simple_fitted_regret_model()
     solver = AZ.AlphaZeroSolver(

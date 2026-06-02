@@ -11,6 +11,7 @@
     lr_decay        :: Float32 = 1.0f0
     ema_decay       :: Float32 = 0.99f0
     gae_lambda      :: Float64 = 0.95
+    transfer_weight :: Float64 = 0.1
 
     optimiser       :: OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(0.5f0),
@@ -36,11 +37,10 @@ function AlphaZeroPlanner(
         game::MG,
         oracle;
         oos_iterations  = 0,
-        transfer_steps  = 0,
-        transfer_weight = 1.0,
+        τ               = 0.0,
         max_depth       = typemax(Int),
         ϵ               = t -> 0.0,
-        smoos_params    = SMOOSParams(; oracle, oos_iterations, transfer_steps, transfer_weight, max_depth, ϵ),
+        smoos_params    = SMOOSParams(; oracle, oos_iterations, τ, max_depth, ϵ),
     )
     return AlphaZeroPlanner(; game, oracle, smoos_params=with_oracle(smoos_params, oracle))
 end
@@ -75,12 +75,14 @@ AlphaZeroPlanner(planner::AlphaZeroPlanner; kwargs...) =
 SMOOSParams(planner::AlphaZeroPlanner; kwargs...) =
     SMOOSParams(; oracle=planner.oracle,
         oos_iterations=planner.smoos_params.oos_iterations,
-        transfer_steps=planner.smoos_params.transfer_steps,
-        transfer_weight=planner.smoos_params.transfer_weight,
+        τ=planner.smoos_params.τ,
         max_depth=planner.smoos_params.max_depth,
         ϵ=planner.smoos_params.ϵ,
         kwargs...
     )
+
+advance_transfer_tau(τ::Real, oos_iterations::Integer, transfer_weight::Real) =
+    Float64(transfer_weight) * (Float64(τ) + Float64(oos_iterations))
 
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
     (; oracle, game, smoos_params) = policy
@@ -111,6 +113,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     cb_oracle = ema_oracle
     steps_done = 0
     update = 0
+    transfer_tau = sol.smoos_params.τ
     call(cb, (;
         oracle=cb_oracle,
         iter=0,
@@ -118,6 +121,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         steps_done,
         max_steps=sol.max_steps,
         exploration_epsilon=sol.smoos_params.ϵ(1),
+        transfer_tau,
         online_oracle,
         ema_oracle,
     ))
@@ -126,7 +130,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         target_steps = min(sol.num_steps, sol.max_steps - steps_done)
         ϵ = sol.smoos_params.ϵ(update)
         selfplay_oracle = ema_oracle
-        smoos_params = with_oracle(sol.smoos_params, selfplay_oracle)
+        smoos_params = with_oracle(sol.smoos_params, selfplay_oracle; τ=transfer_tau)
         hists = if distributed
             distributed_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, gae_lambda=sol.gae_lambda)
         else
@@ -138,12 +142,13 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         steps_done += samples_added
         train_stats = train!(sol, online_oracle, batch; opt_state)
         ema_update!(ema_oracle, online_oracle, sol.ema_decay)
+        transfer_tau = advance_transfer_tau(transfer_tau, sol.smoos_params.oos_iterations, sol.transfer_weight)
         if sol.lr_decay < 1f0
             Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ update)
         end
         cb_oracle = ema_oracle
         cb_info = merge(
-            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, exploration_epsilon=ϵ, online_oracle, ema_oracle),
+            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, samples_added, exploration_epsilon=ϵ, transfer_tau, online_oracle, ema_oracle),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),
@@ -154,7 +159,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         prev_ema_oracle = deepcopy(ema_oracle)
     end
     finish!(progress)
-    return AlphaZeroPlanner(game, ema_oracle; smoos_params=with_oracle(sol.smoos_params, ema_oracle))
+    return AlphaZeroPlanner(game, ema_oracle; smoos_params=with_oracle(sol.smoos_params, ema_oracle; τ=transfer_tau))
 end
 
 function lambda_gae_targets(rewards, values, bootstrap, γ, λ)

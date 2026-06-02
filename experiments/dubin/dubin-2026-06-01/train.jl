@@ -45,6 +45,7 @@ lr_decay = 0.98f0
 ema_decay = 0.98f0
 gae_lambda = 0.95
 epsilon_schedule = t -> 0.3 * (0.90 ^ (t - 1))
+transfer_weight = 0.1
 
 @everywhere begin
     using MarkovGames
@@ -79,20 +80,60 @@ function init_oracle(width, na1, na2)
     return AZ.FittedRegretModel(trunk, regret_head, strategy_head, critic)
 end
 
-function prefix_metrics(result::NamedTuple, prefix::AbstractString)
+function add_scalar_metric!(pairs, prefix::AbstractString, name::Symbol, value)
+    value isa Number || return pairs
+    isfinite(value) || return pairs
+    push!(pairs, Symbol(prefix, "/", name) => value)
+    return pairs
+end
+
+function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az_player::Int; oos_epsilon)
     pairs = Pair{Symbol,Any}[]
-    for k in propertynames(result)
-        v = getproperty(result, k)
-        if v isa AbstractVector{<:Number}
-            for i in eachindex(v)
-                push!(pairs, Symbol(prefix, "/", k, "_p", i) => v[i])
-            end
-        else
-            push!(pairs, Symbol(prefix, "/", k) => v)
-        end
-    end
+    reward = result.reward
+    stderr_reward = result.stderr_reward
+
+    add_scalar_metric!(pairs, prefix, :reward, reward[az_player])
+    add_scalar_metric!(pairs, prefix, :mean_steps, result.mean_steps)
+    add_scalar_metric!(pairs, prefix, :attacker_goal_rate, result.attacker_goal_rate)
+    add_scalar_metric!(pairs, prefix, :tagged_rate, result.tagged_rate)
+    add_scalar_metric!(pairs, prefix, :timeout_rate, result.timeout_rate)
+    add_scalar_metric!(pairs, prefix, :max_steps, result.max_steps)
+    add_scalar_metric!(pairs, prefix, :oos_epsilon, oos_epsilon)
+
+    extra_prefix = replace(prefix, "eval/" => "eval_extra/"; count = 1)
+    add_scalar_metric!(pairs, extra_prefix, :stderr_reward, stderr_reward[az_player])
     return (; pairs...)
 end
+
+function print_eval_summary(iter, az_p1_result, az_p2_result)
+    az_p1_reward = az_p1_result.reward[1]
+    az_p2_reward = az_p2_result.reward[2]
+    println(
+        "eval iter $(iter): ",
+        "AZ p1 reward=$(round(az_p1_reward; digits=3)) ",
+        "goal=$(round(az_p1_result.attacker_goal_rate; digits=3)) ",
+        "tagged=$(round(az_p1_result.tagged_rate; digits=3)) ",
+        "steps=$(round(az_p1_result.mean_steps; digits=1)); ",
+        "AZ p2 reward=$(round(az_p2_reward; digits=3)) ",
+        "goal=$(round(az_p2_result.attacker_goal_rate; digits=3)) ",
+        "tagged=$(round(az_p2_result.tagged_rate; digits=3)) ",
+        "steps=$(round(az_p2_result.mean_steps; digits=1))",
+    )
+    return nothing
+end
+
+function eval_oos_epsilon(info::NamedTuple)
+    if hasproperty(info, :exploration_epsilon)
+        return info.exploration_epsilon
+    elseif hasproperty(info, :update)
+        return epsilon_schedule(max(info.update, 1))
+    else
+        return epsilon_schedule(1)
+    end
+end
+
+eval_transfer_tau(info::NamedTuple) =
+    hasproperty(info, :transfer_tau) ? info.transfer_tau : 0.0
 
 struct StatRolloutEvalCallback{G,S,W}
     game::G
@@ -137,6 +178,8 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         info.oracle;
         oos_iterations = cb.oos_iterations,
         max_depth = cb.search_depth,
+        ϵ = _ -> eval_oos_epsilon(info),
+        τ = eval_transfer_tau(info),
     )
 
     az_p1 = Tools.JointPolicy(
@@ -148,11 +191,13 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         Tools.SinglePlayerAlphaZeroPolicy(planner, 2),
     )
 
+    az_p1_result = rollout_eval(cb, az_p1)
+    az_p2_result = rollout_eval(cb, az_p2)
     metrics = merge(
-        prefix_metrics(rollout_eval(cb, az_p1), "stat_rollout/az_p1_vs_heuristic"),
-        prefix_metrics(rollout_eval(cb, az_p2), "stat_rollout/heuristic_vs_az_p2"),
+        prefixed_az_eval_metrics(az_p1_result, "eval/az_p1_vs_heuristic", 1; oos_epsilon = eval_oos_epsilon(info)),
+        prefixed_az_eval_metrics(az_p2_result, "eval/heuristic_vs_az_p2", 2; oos_epsilon = eval_oos_epsilon(info)),
     )
-    println("stat rollout eval iter $(info.iter): ", metrics)
+    print_eval_summary(info.iter, az_p1_result, az_p2_result)
     isnothing(cb.wandb_cb) || cb.wandb_cb(merge((; iter = info.iter), metrics))
     return nothing
 end
@@ -174,10 +219,12 @@ solver = AZ.AlphaZeroSolver(
     lr_decay = lr_decay,
     ema_decay = ema_decay,
     gae_lambda = gae_lambda,
+    transfer_weight = transfer_weight,
     smoos_params = AZ.SMOOSParams(;
         oracle,
         oos_iterations,
         max_depth,
+        τ = 0.0,
         ϵ = epsilon_schedule,
     ),
 )
@@ -201,10 +248,11 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "lr_decay" => lr_decay,
             "ema_decay" => ema_decay,
             "gae_lambda" => gae_lambda,
+            "transfer_weight" => transfer_weight,
             "epsilon_initial" => epsilon_schedule(1),
             "epsilon_decay" => 0.90,
-            "stat_rollout_runs" => eval_runs,
-            "stat_rollout_every" => eval_every,
+            "eval_runs" => eval_runs,
+            "eval_every" => eval_every,
         ),
     )
 else

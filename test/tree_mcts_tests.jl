@@ -9,8 +9,7 @@ using Random
     )
     params = AZ.SMOOSParams(
         oos_iterations=0,
-        transfer_steps=3,
-        transfer_weight=2.0,
+        τ=6.0,
         max_depth=2,
         oracle=oracle,
     )
@@ -42,8 +41,7 @@ using Random
 
     search_params = AZ.SMOOSParams(
         oos_iterations=64,
-        transfer_steps=0,
-        transfer_weight=1.0,
+        τ=0.0,
         max_depth=2,
         oracle=oracle,
     )
@@ -72,8 +70,7 @@ using Random
     Random.seed!(2)
     rollout_params = AZ.SMOOSParams(
         oos_iterations=1,
-        transfer_steps=0,
-        transfer_weight=1.0,
+        τ=0.0,
         max_depth=3,
         oracle=step_oracle,
     )
