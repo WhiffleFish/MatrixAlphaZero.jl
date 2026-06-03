@@ -19,14 +19,14 @@ using Random
     @test !(:n_sa in fieldnames(typeof(tree)))
 
     AZ.expand_node!(tree, 1, game, params)
-    @test isapprox(tree.regret[1][1], 6 .* [0.8, -0.2]; atol=1e-6)
-    @test isapprox(tree.regret[2][1], 6 .* [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(tree.regret[1][1], sqrt(6) .* [0.8, -0.2]; atol=1e-6)
+    @test isapprox(tree.regret[2][1], sqrt(6) .* [-0.1, 0.9]; atol=1e-6)
     @test isapprox(tree.strategy[1][1], 6 .* [0.25, 0.75]; atol=1e-6)
     @test isapprox(tree.strategy[2][1], 6 .* [0.6, 0.4]; atol=1e-6)
 
     yr, ys = AZ.root_targets(params, tree, game, 1)
-    @test isapprox(yr[1], sqrt(6) .* [0.8, -0.2]; atol=1e-6)
-    @test isapprox(yr[2], sqrt(6) .* [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(yr[1], [0.8, -0.2]; atol=1e-6)
+    @test isapprox(yr[2], [-0.1, 0.9]; atol=1e-6)
     @test isapprox(ys[1], [0.25, 0.75]; atol=1e-6)
     @test isapprox(ys[2], [0.6, 0.4]; atol=1e-6)
 
@@ -78,6 +78,8 @@ using Random
     @test length(rollout_info.tree.s) == 3
     @test !isempty(rollout_info.tree.regret[1][1])
     @test !isempty(rollout_info.tree.regret[1][2])
+    @test sum(rollout_info.tree.strategy[1][1]) > 0
+    @test sum(rollout_info.tree.strategy[2][1]) > 0
 
     hist = AZ.smoos_sim(rollout_params, Fixtures.TwoStepGame(), 0; progress=false, ϵ=0.0, gae_lambda=1.0)
     @test length(hist.s) == 2

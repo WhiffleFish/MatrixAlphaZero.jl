@@ -28,7 +28,7 @@ function normalize_or_uniform!(x::AbstractVector)
     return x
 end
 
-normalized_or_uniform(x::AbstractVector) = normalize_or_uniform!(Float64.(copy(x)))
+normalized_or_uniform(x::AbstractVector) = normalize_or_uniform!(copy(x))
 
 eps_exploration(p, ϵ) = inv(length(p)) .* ϵ .+ (1 .- ϵ) .* p
 
@@ -70,8 +70,9 @@ function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSParams)
     A1, A2 = actions(game)
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
-    tree.regret[1][h] = params.τ .* Float64.(r̂[1])
-    tree.regret[2][h] = params.τ .* Float64.(r̂[2])
+    regret_mass = sqrt(params.τ)
+    tree.regret[1][h] = regret_mass .* Float64.(r̂[1])
+    tree.regret[2][h] = regret_mass .* Float64.(r̂[2])
     tree.strategy[1][h] = params.τ .* normalized_or_uniform(ŝ[1])
     tree.strategy[2][h] = params.τ .* normalized_or_uniform(ŝ[2])
     @assert length(tree.regret[1][h]) == length(A1)
@@ -93,19 +94,19 @@ function child_index!(tree::SMOOSTree, h::Int, a::CartesianIndex{2}, sp)
 end
 
 function root_targets(params::SMOOSParams, tree::SMOOSTree, game::MG, h::Int=1)
-    s = tree.s[h]
     expand_node!(tree, h, game, params)
-    denom = params.τ + params.oos_iterations
-    denom = denom > 0 ? denom : 1.0
-    A1, A2 = actions(game)
+    strategy_denom = params.τ + params.oos_iterations
+    strategy_denom = strategy_denom > 0 ? strategy_denom : 1.0
+    regret_denom = sqrt(strategy_denom)
     yr = (
-        Float64.(tree.regret[1][h]) ./ denom,
-        Float64.(tree.regret[2][h]) ./ denom,
+        Float64.(tree.regret[1][h]) ./ regret_denom,
+        Float64.(tree.regret[2][h]) ./ regret_denom,
     )
     ys = (
-        Float64.(tree.strategy[1][h]) ./ denom,
-        Float64.(tree.strategy[2][h]) ./ denom,
+        normalized_or_uniform(tree.strategy[1][h]),
+        normalized_or_uniform(tree.strategy[2][h]),
     )
+    A1, A2 = actions(game)
     length(yr[1]) == length(A1) || error("player 1 regret target has wrong action dimension")
     length(yr[2]) == length(A2) || error("player 2 regret target has wrong action dimension")
     return yr, ys
