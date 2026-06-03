@@ -101,6 +101,14 @@ using MarkovGames
     @test size(s_target[1]) == (2, 4)
     @test sort(vcat(collect.(AZ.minibatches(collect(1:5), 2))...)) == collect(1:5)
     @test AZ.l2_penalty(Float32[1, 2, 3]) ≈ Float32(14 / 3)
+    oracle_stats = AZ.oracle_metrics(
+        Fixtures.simple_fitted_regret_model(),
+        Fixtures.simple_fitted_regret_model(),
+        batch,
+    )
+    @test hasproperty(oracle_stats, :target_regret_l2)
+    @test isfinite(oracle_stats.target_regret_l2)
+    @test oracle_stats.target_regret_l2 > 0
 
     oracle2 = Fixtures.simple_fitted_regret_model()
     before = deepcopy(Flux.state(oracle2))

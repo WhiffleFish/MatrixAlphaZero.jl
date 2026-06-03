@@ -25,8 +25,8 @@ using Random
     @test isapprox(tree.strategy[2][1], 6 .* [0.6, 0.4]; atol=1e-6)
 
     yr, ys = AZ.root_targets(params, tree, game, 1)
-    @test isapprox(yr[1], [0.8, -0.2]; atol=1e-6)
-    @test isapprox(yr[2], [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(yr[1], sqrt(6) .* [0.8, -0.2]; atol=1e-6)
+    @test isapprox(yr[2], sqrt(6) .* [-0.1, 0.9]; atol=1e-6)
     @test isapprox(ys[1], [0.25, 0.75]; atol=1e-6)
     @test isapprox(ys[2], [0.6, 0.4]; atol=1e-6)
 

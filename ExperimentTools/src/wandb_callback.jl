@@ -42,6 +42,7 @@ const WANDB_ORACLE_QUALITY_KEYS = Set((
     :strategy_kl_p2,
     :target_strategy_kl_p1,
     :target_strategy_kl_p2,
+    :target_regret_l2,
 ))
 
 const WANDB_SELFPLAY_KEYS = Set((

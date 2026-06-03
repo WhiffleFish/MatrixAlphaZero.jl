@@ -34,7 +34,8 @@ function (cb::MetricsCallback)(info::NamedTuple)
         println("  strategy Δkl:  p1=$(_r(info.strategy_kl_p1))  p2=$(_r(info.strategy_kl_p2))")
     end
     if hasproperty(info, :target_strategy_kl_p1)
-        println("  oracle↔target kl:  p1=$(_r(info.target_strategy_kl_p1))  p2=$(_r(info.target_strategy_kl_p2))  │  regret mse=$(_r(info.regret_pred_mse))  value mse=$(_r(info.value_pred_mse))")
+        target_regret_l2 = hasproperty(info, :target_regret_l2) ? "  target regret l2=$(_r(info.target_regret_l2))" : ""
+        println("  oracle↔target kl:  p1=$(_r(info.target_strategy_kl_p1))  p2=$(_r(info.target_strategy_kl_p2))  │  regret mse=$(_r(info.regret_pred_mse))$(target_regret_l2)  value mse=$(_r(info.value_pred_mse))")
     end
     if hasproperty(info, :mean_ep_length)
         println("  self-play:   ep_len=$(_r(info.mean_ep_length, 1))  reward μ=$(_r3(info.mean_reward))  σ=$(_r3(info.reward_std))")

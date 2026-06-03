@@ -7,6 +7,7 @@ end
 
 strategy_entropy(p::AbstractVector{<:Real}) = -sum(x -> iszero(x) ? zero(x) : x * log(x), p)
 strategy_entropy(strategies::AbstractVector{<:AbstractVector}) = mean(strategy_entropy, strategies)
+mean_l2_norm(x::AbstractMatrix) = mean(sqrt(sum(abs2, col)) for col ∈ eachcol(x))
 
 function selfplay_metrics(hists)
     ep_lengths = map(h -> length(h.v), hists)
@@ -56,6 +57,7 @@ function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=1
         strategy_entropy_p1   = NaN32, strategy_entropy_p2   = NaN32,
         strategy_kl_p1        = NaN32, strategy_kl_p2        = NaN32,
         target_strategy_kl_p1 = NaN32, target_strategy_kl_p2 = NaN32,
+        target_regret_l2      = NaN32,
         regret_pred_mse       = NaN32,
         value_pred_mse        = NaN32,
     )
@@ -81,6 +83,7 @@ function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=1
     r_cur = regret(oracle, X)
     r_t1 = Float32.(reduce(hcat, batch.regret[1][idxs]))
     r_t2 = Float32.(reduce(hcat, batch.regret[2][idxs]))
+    target_regret_l2 = Float32(0.5 * (mean_l2_norm(r_t1) + mean_l2_norm(r_t2)))
     r_mse = Float32(0.5 * (mean(abs2, r_cur[1] .- r_t1) + mean(abs2, r_cur[2] .- r_t2)))
 
     v_pred = vec(value(oracle, X))
@@ -93,6 +96,7 @@ function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=1
         strategy_kl_p2        = kl_p2,
         target_strategy_kl_p1 = skl_p1,
         target_strategy_kl_p2 = skl_p2,
+        target_regret_l2      = target_regret_l2,
         regret_pred_mse       = r_mse,
         value_pred_mse        = v_mse,
     )
