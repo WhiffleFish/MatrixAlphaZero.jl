@@ -52,12 +52,18 @@ function smoos_trajectory!(
     )
 
     value = Float64(r) + discount(game) * tail_value
+    # sample_reach = max(
+    #     q1 * q2 * σ1_sample[i] * σ2_sample[j] * tail_q1 * tail_q2,
+    #     eps(Float64),
+    # )
+    # w1 = value * (x2 * σ2[j] * tail_x2) * tail_x1 / sample_reach
+    # w2 = -value * (x1 * σ1[i] * tail_x1) * tail_x2 / sample_reach
     sample_reach = max(
-        q1 * q2 * σ1_sample[i] * σ2_sample[j] * tail_q1 * tail_q2,
+        σ1_sample[i] * σ2_sample[j] * tail_q1 * tail_q2,
         eps(Float64),
     )
-    w1 = value * (x2 * σ2[j] * tail_x2) * tail_x1 / sample_reach
-    w2 = -value * (x1 * σ1[i] * tail_x1) * tail_x2 / sample_reach
+    w1 = value * (σ2[j] * tail_x2) * tail_x1 / sample_reach
+    w2 = -value * (σ1[i] * tail_x1) * tail_x2 / sample_reach
 
     for b ∈ eachindex(σ1)
         tree.regret[1][h][b] += ((b == i) - σ1[b]) * w1
