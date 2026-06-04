@@ -30,7 +30,7 @@ function train!(
             s_target_mb = map(s -> s[:, mb_idxs], s_target)
             ∇θ = Flux.gradient(oracle) do oracle
                 lv, lr, ls = loss(oracle, X_mb, v_target_mb, r_target_mb, s_target_mb)
-                l = lv + lr + ls + λ * sum(l2_penalty, Flux.trainables(oracle))
+                l = lv + lr + ls # + λ * sum(l2_penalty, Flux.trainables(oracle))
                 Flux.Zygote.ignore_derivatives() do
                     push!(losses, l)
                     push!(value_losses, lv)
