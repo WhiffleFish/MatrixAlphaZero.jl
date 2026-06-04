@@ -52,6 +52,7 @@ using MarkovGames
     @test AZ.AlphaZeroPlanner(solver, game).smoos_params.oos_iterations == 0
     @test AZ.AlphaZeroPlanner(game, solver).smoos_params.max_depth == 3
     @test solver.sim_depth == 7
+    @test solver.ema
 
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
@@ -152,4 +153,25 @@ using MarkovGames
     @test callback_has_minibatches == [false, true]
     @test callback_iters == [0, 1]
     @test callback_sim_depths == [7, 7]
+
+    no_ema_oracle = Fixtures.simple_fitted_regret_model()
+    no_ema_solver = AZ.AlphaZeroSolver(
+        max_steps=1,
+        num_steps=1,
+        sim_depth=1,
+        oracle=no_ema_oracle,
+        smoos_params=AZ.SMOOSParams(oos_iterations=0, max_depth=1, oracle=no_ema_oracle),
+        update_epochs=1,
+        num_batches=1,
+        ema=false,
+    )
+    @test !no_ema_solver.ema
+    no_ema_uses_online = Bool[]
+    no_ema_reports_no_shadow = Bool[]
+    MarkovGames.solve(no_ema_solver, game; cb=info -> begin
+        push!(no_ema_uses_online, info.oracle === info.online_oracle)
+        push!(no_ema_reports_no_shadow, isnothing(info.ema_oracle))
+    end)
+    @test all(no_ema_uses_online)
+    @test all(no_ema_reports_no_shadow)
 end

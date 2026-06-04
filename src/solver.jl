@@ -10,6 +10,7 @@
     num_batches     :: Int     = 4
     lr              :: Float32 = 3f-4
     lr_decay        :: Float32 = 1.0f0
+    ema             :: Bool    = true
     ema_decay       :: Float32 = 0.99f0
     gae_lambda      :: Float64 = 0.95
     transfer_weight :: Float64 = 0.01
@@ -111,8 +112,8 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     ema_oracle = deepcopy(online_oracle)
     progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
-    prev_ema_oracle = deepcopy(ema_oracle)
-    cb_oracle = ema_oracle
+    cb_oracle = sol.ema ? ema_oracle : online_oracle
+    prev_cb_oracle = deepcopy(cb_oracle)
     steps_done = 0
     update = 0
     transfer_tau = sol.smoos_params.τ
@@ -126,13 +127,13 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         exploration_epsilon=sol.smoos_params.ϵ(1),
         transfer_tau,
         online_oracle,
-        ema_oracle,
+        ema_oracle=sol.ema ? ema_oracle : nothing,
     ))
     while steps_done < sol.max_steps
         update += 1
         target_steps = min(sol.num_steps, sol.max_steps - steps_done)
         ϵ = sol.smoos_params.ϵ(update)
-        selfplay_oracle = ema_oracle
+        selfplay_oracle = sol.ema ? ema_oracle : online_oracle
         smoos_params = with_oracle(sol.smoos_params, selfplay_oracle; τ=transfer_tau)
         hists = if distributed
             distributed_smoos(progress, game, smoos_params, target_steps, s0; ϵ, steps_done, sim_depth=sol.sim_depth, gae_lambda=sol.gae_lambda)
@@ -144,25 +145,26 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         iszero(samples_added) && break
         steps_done += samples_added
         train_stats = train!(sol, online_oracle, batch; opt_state)
-        ema_update!(ema_oracle, online_oracle, sol.ema_decay)
+        sol.ema && ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         transfer_tau = advance_transfer_tau(transfer_tau, sol.smoos_params.oos_iterations, sol.transfer_weight)
         if sol.lr_decay < 1f0
             Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ update)
         end
-        cb_oracle = ema_oracle
+        cb_oracle = sol.ema ? ema_oracle : online_oracle
         cb_info = merge(
-            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, exploration_epsilon=ϵ, transfer_tau, online_oracle, ema_oracle),
+            (oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, exploration_epsilon=ϵ, transfer_tau, online_oracle, ema_oracle=sol.ema ? ema_oracle : nothing),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),
             batch_metrics(batch),
-            oracle_metrics(ema_oracle, prev_ema_oracle, batch),
+            oracle_metrics(cb_oracle, prev_cb_oracle, batch),
         )
         call(cb, cb_info)
-        prev_ema_oracle = deepcopy(ema_oracle)
+        prev_cb_oracle = deepcopy(cb_oracle)
     end
     finish!(progress)
-    return AlphaZeroPlanner(game, ema_oracle; smoos_params=with_oracle(sol.smoos_params, ema_oracle; τ=transfer_tau))
+    final_oracle = sol.ema ? ema_oracle : online_oracle
+    return AlphaZeroPlanner(game, final_oracle; smoos_params=with_oracle(sol.smoos_params, final_oracle; τ=transfer_tau))
 end
 
 function lambda_gae_targets(rewards, values, bootstrap, γ, λ)
