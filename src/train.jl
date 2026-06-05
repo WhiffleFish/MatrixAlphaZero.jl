@@ -1,3 +1,5 @@
+solver_option(sol, key::Symbol, default) = hasproperty(sol, key) ? getproperty(sol, key) : default
+
 function train!(
         sol, oracle, batch;
         update_epochs = sol.update_epochs,
@@ -5,6 +7,9 @@ function train!(
         optimiser = sol.optimiser,
         opt_state = nothing,
         rng = sol.rng,
+        value_weight = solver_option(sol, :value_weight, 1.0f0),
+        regret_weight = solver_option(sol, :regret_weight, 1.0f0),
+        strategy_weight = solver_option(sol, :strategy_weight, 1.0f0),
         λ = 1f-2
     )
     isnothing(opt_state) && (opt_state = Flux.setup(optimiser, oracle))
@@ -30,7 +35,7 @@ function train!(
             s_target_mb = map(s -> s[:, mb_idxs], s_target)
             ∇θ = Flux.gradient(oracle) do oracle
                 lv, lr, ls = loss(oracle, X_mb, v_target_mb, r_target_mb, s_target_mb)
-                l = lv + lr + ls # + λ * sum(l2_penalty, Flux.trainables(oracle))
+                l = value_weight * lv + regret_weight * lr + strategy_weight * ls # + λ * sum(l2_penalty, Flux.trainables(oracle))
                 Flux.Zygote.ignore_derivatives() do
                     push!(losses, l)
                     push!(value_losses, lv)

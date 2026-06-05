@@ -14,6 +14,9 @@
     ema_decay       :: Float32 = 0.99f0
     gae_lambda      :: Float64 = 0.95
     transfer_weight :: Float64 = 0.01
+    value_weight    :: Float32 = 1.0f0
+    regret_weight   :: Float32 = 1.0f0
+    strategy_weight :: Float32 = 1.0f0
 
     optimiser       :: OPT     = Flux.Optimisers.OptimiserChain(
         Flux.Optimisers.ClipNorm(0.5f0),

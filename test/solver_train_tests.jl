@@ -53,6 +53,9 @@ using MarkovGames
     @test AZ.AlphaZeroPlanner(game, solver).smoos_params.max_depth == 3
     @test solver.sim_depth == 7
     @test solver.ema
+    @test solver.value_weight == 1.0f0
+    @test solver.regret_weight == 1.0f0
+    @test solver.strategy_weight == 1.0f0
 
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
@@ -125,6 +128,22 @@ using MarkovGames
     @test length(train_stats.regret_losses) == 2
     @test length(train_stats.strategy_losses) == 2
     @test Flux.state(oracle2) != before
+
+    value_only_oracle = Fixtures.simple_fitted_regret_model()
+    value_only_stats = AZ.train!(
+        (
+            num_batches = 1,
+            update_epochs = 1,
+            optimiser = Flux.Optimisers.Adam(0.0f0),
+            rng = Random.MersenneTwister(2),
+            value_weight = 1.0f0,
+            regret_weight = 0.0f0,
+            strategy_weight = 0.0f0,
+        ),
+        value_only_oracle,
+        batch,
+    )
+    @test only(value_only_stats.losses) ≈ only(value_only_stats.value_losses)
 
     @test AZ.lambda_gae_targets([1.0], [0.5], 0.0, 0.9, 0.0) ≈ [1.0]
     @test AZ.lambda_gae_targets([1.0], [0.5], 2.0, 0.9, 0.0) ≈ [2.8]
