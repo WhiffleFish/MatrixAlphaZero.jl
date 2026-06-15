@@ -1,22 +1,3 @@
-struct SMOOSTree{S}
-    s           :: Vector{S}
-    children    :: Vector{Dict{Tuple{Int,Int}, Int}}
-    regret      :: NTuple{2, Vector{Vector{Float64}}}
-    strategy    :: NTuple{2, Vector{Vector{Float64}}}
-end
-
-function SMOOSTree(game::MG, s=rand(initialstate(game)))
-    return SMOOSTree(
-        [s],
-        [Dict{Tuple{Int,Int}, Int}()],
-        (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
-        (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
-    )
-end
-
-Tree(::SMOOSParams, game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
-Tree(game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
-
 function normalize_or_uniform!(x::AbstractVector)
     isempty(x) && return x
     s = sum(x)
@@ -62,52 +43,4 @@ end
 
 function oracle_state_value(oracle, game::MG, s)
     return Float64(only(value(oracle, MarkovGames.convert_s(Vector{Float32}, s, game))))
-end
-
-function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSParams)
-    isempty(tree.regret[1][h]) || return nothing
-    s = tree.s[h]
-    A1, A2 = actions(game)
-    r̂ = state_regret(params.oracle, game, s)
-    ŝ = state_strategy(params.oracle, game, s)
-    regret_mass = sqrt(params.τ)
-    tree.regret[1][h] = regret_mass .* Float64.(r̂[1])
-    tree.regret[2][h] = regret_mass .* Float64.(r̂[2])
-    tree.strategy[1][h] = params.τ .* normalized_or_uniform(ŝ[1])
-    tree.strategy[2][h] = params.τ .* normalized_or_uniform(ŝ[2])
-    @assert length(tree.regret[1][h]) == length(A1)
-    @assert length(tree.regret[2][h]) == length(A2)
-    return nothing
-end
-
-function child_index!(tree::SMOOSTree, h::Int, a::CartesianIndex{2}, sp)
-    key = Tuple(a)
-    return get!(tree.children[h], key) do
-        push!(tree.s, sp)
-        push!(tree.children, Dict{Tuple{Int,Int}, Int}())
-        push!(tree.regret[1], Float64[])
-        push!(tree.regret[2], Float64[])
-        push!(tree.strategy[1], Float64[])
-        push!(tree.strategy[2], Float64[])
-        return length(tree.s)
-    end
-end
-
-function root_targets(params::SMOOSParams, tree::SMOOSTree, game::MG, h::Int=1)
-    expand_node!(tree, h, game, params)
-    strategy_denom = params.τ + params.oos_iterations
-    strategy_denom = strategy_denom > 0 ? strategy_denom : 1.0
-    regret_denom = sqrt(strategy_denom)
-    yr = (
-        Float64.(tree.regret[1][h]) ./ regret_denom,
-        Float64.(tree.regret[2][h]) ./ regret_denom,
-    )
-    ys = (
-        normalized_or_uniform(tree.strategy[1][h]),
-        normalized_or_uniform(tree.strategy[2][h]),
-    )
-    A1, A2 = actions(game)
-    length(yr[1]) == length(A1) || error("player 1 regret target has wrong action dimension")
-    length(yr[2]) == length(A2) || error("player 2 regret target has wrong action dimension")
-    return yr, ys
 end

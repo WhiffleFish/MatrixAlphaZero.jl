@@ -84,7 +84,7 @@ function _serial_stat_rollouts(
         MeanResult(:reward; name=:reward, init=zero(MarkovGames.reward_type(game))),
         _as_tuple(batch_accumulators)...,
     ))
-    foreach(reset!, batch_stats)
+    foreach(MarkovGames.reset!, batch_stats)
 
     for i in 1:n
         sim_rng = Random.default_rng()
@@ -96,10 +96,10 @@ function _serial_stat_rollouts(
             accumulators = rollout_accumulators,
         )
         result = POMDPs.simulate(simulator, game, joint_policy, initial_state)
-        foreach(stat -> observe_sim!(stat, result), batch_stats)
+        foreach(stat -> MarkovGames.observe_sim!(stat, result), batch_stats)
     end
 
-    return batch_result(batch_stats)
+    return MarkovGames.batch_result(batch_stats)
 end
 
 function evaluate_joint_policy(

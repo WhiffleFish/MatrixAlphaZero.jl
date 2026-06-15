@@ -82,6 +82,13 @@ TableOracle(;
     strategies=Dict{Float32, NTuple{2, Vector{Float32}}}(),
 ) = TableOracle(values, regrets, strategies)
 
+function static_actor_critic(game::MG; values=Dict{Float32, Float32}(), policies=Dict{Float32, NTuple{2, Vector{Float32}}}())
+    return AZ.StaticActorCritic(
+        s -> get(policies, state_key(s), uniform_strategy(game)),
+        s -> get(values, state_key(s), 0f0),
+    )
+end
+
 function AZ.value(o::TableOracle, x::AbstractVector)
     return Float32[get(o.values, state_key(x), 0f0)]
 end
@@ -135,7 +142,14 @@ function MarkovGames.solve(::GreedyMatrixSolver, A::AbstractMatrix, B::AbstractM
     return MarkovGames.solve(GreedyMatrixSolver(), A)
 end
 
-function simple_fitted_regret_model(; input_dim::Int=1, hidden_dim::Int=4, action_dims=(2, 2))
+function simple_fitted_regret_model(;
+        input_dim::Int=1,
+        hidden_dim::Int=4,
+        action_dims=(2, 2),
+        value_weight=1.0f0,
+        regret_weight=1.0f0,
+        strategy_weight=1.0f0,
+    )
     shared = Dense(input_dim => hidden_dim, tanh)
     regret1 = Dense(hidden_dim => action_dims[1])
     regret2 = Dense(hidden_dim => action_dims[2])
@@ -156,7 +170,45 @@ function simple_fitted_regret_model(; input_dim::Int=1, hidden_dim::Int=4, actio
     critic.weight .= reshape(Float32.(range(-0.2, 0.2; length=length(critic.weight))), size(critic.weight))
     critic.bias .= Float32[0.1]
 
-    return AZ.FittedRegretModel(shared, AZ.MultiActor(regret1, regret2), AZ.MultiActor(strategy1, strategy2), critic)
+    return AZ.FittedRegretModel(
+        shared,
+        AZ.MultiActor(regret1, regret2),
+        AZ.MultiActor(strategy1, strategy2),
+        critic;
+        value_weight,
+        regret_weight,
+        strategy_weight,
+    )
+end
+
+function simple_actor_critic(;
+        input_dim::Int=1,
+        hidden_dim::Int=4,
+        action_dims=(2, 2),
+        value_weight=1.0f0,
+        policy_weight=1.0f0,
+    )
+    shared = Dense(input_dim => hidden_dim, tanh)
+    actor1 = Dense(hidden_dim => action_dims[1])
+    actor2 = Dense(hidden_dim => action_dims[2])
+    critic = Dense(hidden_dim => 1)
+
+    shared.weight .= reshape(Float32.(range(-0.35, 0.35; length=length(shared.weight))), size(shared.weight))
+    shared.bias .= Float32.(range(-0.15, 0.15; length=length(shared.bias)))
+    actor1.weight .= reshape(Float32.(range(-0.25, 0.25; length=length(actor1.weight))), size(actor1.weight))
+    actor1.bias .= Float32.(range(0.1, -0.1; length=length(actor1.bias)))
+    actor2.weight .= reshape(Float32.(range(0.2, -0.2; length=length(actor2.weight))), size(actor2.weight))
+    actor2.bias .= Float32.(range(-0.05, 0.05; length=length(actor2.bias)))
+    critic.weight .= reshape(Float32.(range(-0.2, 0.2; length=length(critic.weight))), size(critic.weight))
+    critic.bias .= Float32[0.1]
+
+    return AZ.ActorCritic(
+        shared,
+        AZ.MultiActor(actor1, actor2),
+        critic;
+        value_weight,
+        policy_weight,
+    )
 end
 
 function AZ.getloss(critic::Dense, x; value_target)
@@ -165,5 +217,6 @@ function AZ.getloss(critic::Dense, x; value_target)
 end
 
 AZ.getloss(actor::AZ.MultiActor, x; strategy_target) = AZ.fitted_strategy_loss(actor, x, strategy_target)
+AZ.getloss(actor::AZ.MultiActor, x; policy_target) = AZ.actorloss(actor, x, policy_target)
 
 end

@@ -7,7 +7,7 @@ using Random
         regrets=Dict(0f0 => (Float32[0.8, -0.2], Float32[-0.1, 0.9])),
         strategies=Dict(0f0 => (Float32[0.25, 0.75], Float32[0.6, 0.4])),
     )
-    params = AZ.SMOOSParams(
+    params = AZ.SMOOSSearch(
         oos_iterations=0,
         τ=6.0,
         max_depth=2,
@@ -39,13 +39,13 @@ using Random
     idx = AZ.action_idx_from_probs([0.0, 1.0], [1.0, 0.0])
     @test idx == CartesianIndex(2, 1)
 
-    search_params = AZ.SMOOSParams(
+    deep_search = AZ.SMOOSSearch(
         oos_iterations=64,
         τ=0.0,
         max_depth=2,
         oracle=oracle,
     )
-    (yr2, ys2), info = AZ.fitted_smoos_info(search_params, game, false; ϵ=0.0)
+    (yr2, ys2), info = AZ.fitted_smoos_info(deep_search, game, false; ϵ=0.0)
     @test length(yr2[1]) == 2
     @test length(yr2[2]) == 2
     @test length(ys2[1]) == 2
@@ -68,7 +68,7 @@ using Random
         ),
     )
     Random.seed!(2)
-    rollout_params = AZ.SMOOSParams(
+    rollout_params = AZ.SMOOSSearch(
         oos_iterations=1,
         τ=0.0,
         max_depth=3,

@@ -17,12 +17,41 @@ struct FittedRegretModel{S,R,A,C}
     regret_head::R
     strategy_head::A
     critic::C
+    value_weight::Float32
+    regret_weight::Float32
+    strategy_weight::Float32
 end
 
-FittedRegretModel(regret_head, strategy_head, critic) =
-    FittedRegretModel(identity, regret_head, strategy_head, critic)
+function FittedRegretModel(
+        shared,
+        regret_head,
+        strategy_head,
+        critic;
+        value_weight::Real=1.0f0,
+        regret_weight::Real=1.0f0,
+        strategy_weight::Real=1.0f0,
+    )
+    return FittedRegretModel(
+        shared,
+        regret_head,
+        strategy_head,
+        critic,
+        Float32(value_weight),
+        Float32(regret_weight),
+        Float32(strategy_weight),
+    )
+end
+
+FittedRegretModel(regret_head, strategy_head, critic; kwargs...) =
+    FittedRegretModel(identity, regret_head, strategy_head, critic; kwargs...)
 
 Flux.@layer :expand FittedRegretModel
+Flux.trainable(model::FittedRegretModel) = (;
+    shared=model.shared,
+    regret_head=model.regret_head,
+    strategy_head=model.strategy_head,
+    critic=model.critic,
+)
 
 function (model::FittedRegretModel)(x; logits=false)
     encoded_input = model.shared(x)
@@ -91,6 +120,91 @@ function getloss(model::FittedRegretModel, input; value_target, regret_target, s
     regret_loss = fitted_regret_loss(model.regret_head, encoded_input, regret_target)
     strategy_loss = fitted_strategy_loss(model.strategy_head, encoded_input, strategy_target)
     return (; value_loss, value_mse, regret_loss, strategy_loss)
+end
+
+struct ActorCritic{S,A,C}
+    shared::S
+    actor::A
+    critic::C
+    value_weight::Float32
+    policy_weight::Float32
+end
+
+function ActorCritic(
+        shared,
+        actor,
+        critic;
+        value_weight::Real=1.0f0,
+        policy_weight::Real=1.0f0,
+    )
+    return ActorCritic(
+        shared,
+        actor,
+        critic,
+        Float32(value_weight),
+        Float32(policy_weight),
+    )
+end
+
+ActorCritic(actor, critic; kwargs...) =
+    ActorCritic(identity, actor, critic; kwargs...)
+
+Flux.@layer :expand ActorCritic
+Flux.trainable(model::ActorCritic) = (;
+    shared=model.shared,
+    actor=model.actor,
+    critic=model.critic,
+)
+
+function (model::ActorCritic)(x; logits=false)
+    encoded_input = model.shared(x)
+    value = model.critic(encoded_input)
+    policy = model.actor(encoded_input; logits)
+    return (; value, policy)
+end
+
+function value(model::ActorCritic, x)
+    encoded_input = model.shared(x)
+    return model.critic(encoded_input)
+end
+
+function policy(model::ActorCritic, x; logits=false)
+    encoded_input = model.shared(x)
+    return model.actor(encoded_input; logits)
+end
+
+state_value(model::ActorCritic, game::MG, s) =
+    value(model, convert_s(Vector{Float32}, s, game))
+
+state_policy(model::ActorCritic, game::MG, s) =
+    policy(model, convert_s(Vector{Float32}, s, game))
+
+function batch_state_value(model::ActorCritic, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return value(model, batch_s)
+end
+
+function batch_state_policy(model::ActorCritic, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return policy(model, batch_s)
+end
+
+function loss(model::ActorCritic, x, value_target, policy_target)
+    encoded_input = model.shared(x)
+    value_loss = criticloss(model.critic, encoded_input, value_target)
+    policy_loss = actorloss(model.actor, encoded_input, policy_target)
+    return value_loss, policy_loss
+end
+
+function getloss(model::ActorCritic, input; value_target, policy_target)
+    encoded_input = model.shared(input)
+    value_loss, value_mse = getloss(model.critic, encoded_input; value_target)
+    policy_loss = getloss(model.actor, encoded_input; policy_target)
+    return (; value_loss, value_mse, policy_loss)
 end
 
 function criticloss(critic, x::AbstractArray, v_target::AbstractArray)
@@ -204,6 +318,49 @@ struct StaticFittedRegretModel{R,A,C}
     regret::R
     strategy::A
     critic::C
+end
+
+struct StaticActorCritic{A,C}
+    actor::A
+    critic::C
+    value_weight::Float32
+    policy_weight::Float32
+end
+
+function StaticActorCritic(actor, critic; value_weight::Real=1.0f0, policy_weight::Real=1.0f0)
+    return StaticActorCritic(actor, critic, Float32(value_weight), Float32(policy_weight))
+end
+
+state_value(model::StaticActorCritic, game, s) = model.critic(s)
+
+batch_state_value(model::StaticActorCritic, game, sv) = map(sv) do s_i
+    model.critic(s_i)
+end
+
+function value(model::StaticActorCritic, x::AbstractVector)
+    return Float32[model.critic(x)]
+end
+
+function value(model::StaticActorCritic, x::AbstractMatrix)
+    vals = Float32[model.critic(col) for col in eachcol(x)]
+    return reshape(vals, 1, :)
+end
+
+state_policy(model::StaticActorCritic, game, s) = model.actor(s)
+
+batch_state_policy(model::StaticActorCritic, game, sv) = map(sv) do s_i
+    model.actor(s_i)
+end
+
+policy(model::StaticActorCritic, x::AbstractVector; logits=false) =
+    model.actor(x)
+
+function policy(model::StaticActorCritic, x::AbstractMatrix; logits=false)
+    policies = map(col -> model.actor(col), eachcol(x))
+    return (
+        Float32.(reduce(hcat, first.(policies))),
+        Float32.(reduce(hcat, last.(policies))),
+    )
 end
 
 state_value(model::StaticFittedRegretModel, game, s) = model.critic(s)

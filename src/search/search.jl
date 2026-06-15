@@ -2,5 +2,7 @@ include("api.jl")
 
 include("common.jl")
 
-include("driver.jl")
-export SMOOSParams
+include("smoos.jl")
+
+include("mcts.jl")
+export SMOOSSearch, MCTSSearch, RegretMatchingSearch

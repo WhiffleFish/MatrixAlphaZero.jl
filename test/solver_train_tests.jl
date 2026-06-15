@@ -19,43 +19,49 @@ using MarkovGames
 
     game = Fixtures.ScalarMatrixGame()
     oracle = Fixtures.TableOracle(values=Dict(1f0 => 0f0))
-    planner = AZ.AlphaZeroPlanner(
-        game,
-        oracle;
+    search = AZ.SMOOSSearch(;
+        oracle,
         oos_iterations=3,
         τ=2.0,
+        transfer_weight=0.5,
         max_depth=5,
     )
-    @test planner.smoos_params.oos_iterations == 3
-    @test planner.smoos_params.τ == 2.0
-
-    params = AZ.SMOOSParams(planner)
-    @test params.oos_iterations == 3
-    @test params.τ == 2.0
-    @test params.max_depth == 5
-    @test AZ.with_oracle(params, :new_oracle).oracle == :new_oracle
-    @test AZ.with_oracle(params, :new_oracle; τ=4.0).τ == 4.0
+    planner = AZ.AlphaZeroPlanner(game, search)
+    @test planner.search === search
+    @test !hasproperty(planner, :search_params)
+    @test !hasproperty(planner, :smoos_params)
+    @test !hasproperty(planner, :mcts_params)
+    @test planner.search.oos_iterations == 3
+    @test planner.search.τ == 2.0
+    @test planner.search.transfer_weight == 0.5
+    @test AZ.with_oracle(search, :new_oracle).oracle == :new_oracle
+    @test AZ.with_oracle(search, :new_oracle; τ=4.0).τ == 4.0
     @test AZ.advance_transfer_tau(0.0, 3, 0.5) == 1.5
     @test AZ.advance_transfer_tau(1.5, 3, 0.5) == 2.25
 
     train_oracle = Fixtures.simple_fitted_regret_model()
+    train_search = AZ.SMOOSSearch(; oos_iterations=0, max_depth=3, oracle=train_oracle)
     solver = AZ.AlphaZeroSolver(
         max_steps=2,
         num_steps=2,
         sim_depth=7,
-        oracle=train_oracle,
-        smoos_params=AZ.SMOOSParams(oos_iterations=0, max_depth=3, oracle=train_oracle),
+        search=train_search,
         update_epochs=1,
         num_batches=1,
         ema_decay=0.5f0,
     )
-    @test AZ.AlphaZeroPlanner(solver, game).smoos_params.oos_iterations == 0
-    @test AZ.AlphaZeroPlanner(game, solver).smoos_params.max_depth == 3
+    @test solver.search === train_search
+    @test !hasproperty(solver, :search_params)
+    @test !hasproperty(solver, :smoos_params)
+    @test !hasproperty(solver, :mcts_params)
+    @test !hasproperty(solver, :transfer_weight)
+    @test !hasproperty(solver, :value_weight)
+    @test !hasproperty(solver, :regret_weight)
+    @test !hasproperty(solver, :strategy_weight)
+    @test AZ.AlphaZeroPlanner(solver, game).search.oos_iterations == 0
+    @test AZ.AlphaZeroPlanner(game, solver).search.max_depth == 3
     @test solver.sim_depth == 7
     @test solver.ema
-    @test solver.value_weight == 1.0f0
-    @test solver.regret_weight == 1.0f0
-    @test solver.strategy_weight == 1.0f0
 
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
@@ -76,9 +82,12 @@ using MarkovGames
         Flux.loadmodel!(target, state_path)
         @test Flux.state(target) == Flux.state(source)
 
-        planner_target = AZ.AlphaZeroPlanner(game, Fixtures.simple_fitted_regret_model(); oos_iterations=0, max_depth=1)
+        planner_target = AZ.AlphaZeroPlanner(
+            game,
+            AZ.SMOOSSearch(; oracle=Fixtures.simple_fitted_regret_model(), oos_iterations=0, max_depth=1),
+        )
         Flux.loadmodel!(planner_target, state_path)
-        @test Flux.state(planner_target.oracle) == Flux.state(source)
+        @test Flux.state(AZ.oracle(planner_target)) == Flux.state(source)
 
         oracle_path = joinpath(dir, "oracle.jld2")
         jldsave(oracle_path; oracle=source)
@@ -111,6 +120,8 @@ using MarkovGames
         batch,
     )
     @test hasproperty(oracle_stats, :target_regret_l2)
+    @test hasproperty(oracle_stats, :policy_kl_p1)
+    @test !hasproperty(oracle_stats, :target_strategy_kl_p1)
     @test isfinite(oracle_stats.target_regret_l2)
     @test oracle_stats.target_regret_l2 > 0
 
@@ -127,44 +138,57 @@ using MarkovGames
     @test length(train_stats.value_losses) == 2
     @test length(train_stats.regret_losses) == 2
     @test length(train_stats.strategy_losses) == 2
+    @test hasproperty(AZ.training_metrics(train_stats), :mean_regret_loss)
+    @test hasproperty(AZ.training_minibatch_metrics(train_stats), :strategy_loss)
     @test Flux.state(oracle2) != before
 
-    value_only_oracle = Fixtures.simple_fitted_regret_model()
+    value_only_oracle = Fixtures.simple_fitted_regret_model(;
+        value_weight = 1.0f0,
+        regret_weight = 0.0f0,
+        strategy_weight = 0.0f0,
+    )
     value_only_stats = AZ.train!(
         (
             num_batches = 1,
             update_epochs = 1,
             optimiser = Flux.Optimisers.Adam(0.0f0),
             rng = Random.MersenneTwister(2),
-            value_weight = 1.0f0,
-            regret_weight = 0.0f0,
-            strategy_weight = 0.0f0,
         ),
         value_only_oracle,
         batch,
     )
     @test only(value_only_stats.losses) ≈ only(value_only_stats.value_losses)
 
+    policy_batch = (
+        s = batch.s,
+        v = batch.v,
+        policy = batch.strategy,
+    )
+    @test_throws ArgumentError AZ.train!(train_sol, Fixtures.simple_fitted_regret_model(), policy_batch)
+    @test_throws ArgumentError AZ.train!(train_sol, Fixtures.simple_actor_critic(), batch)
+
     @test AZ.lambda_gae_targets([1.0], [0.5], 0.0, 0.9, 0.0) ≈ [1.0]
     @test AZ.lambda_gae_targets([1.0], [0.5], 2.0, 0.9, 0.0) ≈ [2.8]
     @test AZ.lambda_gae_targets([1.0, 2.0], [0.0, 0.0], 3.0, 0.5, 1.0) ≈ [2.75, 3.5]
 
     progress = Progress(1; enabled=false)
-    smoos_params = AZ.SMOOSParams(oos_iterations=0, max_depth=2, oracle=Fixtures.simple_fitted_regret_model())
-    serial = AZ.serial_smoos(progress, game, smoos_params, 1, initialstate(game); ϵ=0.0)
+    smoos_search = AZ.SMOOSSearch(oos_iterations=0, max_depth=2, oracle=Fixtures.simple_fitted_regret_model())
+    serial = AZ.serial_smoos(progress, game, smoos_search, 1, initialstate(game); ϵ=0.0)
     @test length(serial) == 1
 
-    distributed = AZ.distributed_smoos(Progress(1; enabled=false), game, smoos_params, 1, initialstate(game); ϵ=0.0)
+    distributed = AZ.distributed_smoos(Progress(1; enabled=false), game, smoos_search, 1, initialstate(game); ϵ=0.0)
     @test length(distributed) == 1
 
     callback_iters = Int[]
     callback_steps = Int[]
     callback_sim_depths = Int[]
+    callback_transfer_taus = Float64[]
     callback_has_minibatches = Bool[]
     planner_out = MarkovGames.solve(solver, game; cb=info -> begin
         push!(callback_iters, info.iter)
         hasproperty(info, :steps_done) && push!(callback_steps, info.steps_done)
         hasproperty(info, :sim_depth) && push!(callback_sim_depths, info.sim_depth)
+        hasproperty(info, :transfer_tau) && push!(callback_transfer_taus, info.transfer_tau)
         push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
     end)
     @test planner_out isa AZ.AlphaZeroPlanner
@@ -172,14 +196,15 @@ using MarkovGames
     @test callback_has_minibatches == [false, true]
     @test callback_iters == [0, 1]
     @test callback_sim_depths == [7, 7]
+    @test callback_transfer_taus == [0.0, 0.0]
+    @test planner_out.search isa AZ.SMOOSSearch
 
     no_ema_oracle = Fixtures.simple_fitted_regret_model()
     no_ema_solver = AZ.AlphaZeroSolver(
         max_steps=1,
         num_steps=1,
         sim_depth=1,
-        oracle=no_ema_oracle,
-        smoos_params=AZ.SMOOSParams(oos_iterations=0, max_depth=1, oracle=no_ema_oracle),
+        search=AZ.SMOOSSearch(oos_iterations=0, max_depth=1, oracle=no_ema_oracle),
         update_epochs=1,
         num_batches=1,
         ema=false,
