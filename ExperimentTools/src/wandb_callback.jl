@@ -78,26 +78,6 @@ function wandb_metric_key(k::Symbol)
     return string(k)
 end
 
-function minibatch_metrics_table(metrics)
-    columns = hasproperty(metrics, :policy_loss) ?
-        ["minibatch", "loss", "value_loss", "policy_loss", "grad_norm"] :
-        ["minibatch", "loss", "value_loss", "regret_loss", "strategy_loss", "grad_norm"]
-    n = length(metrics.minibatch)
-    data = Matrix{Float64}(undef, n, length(columns))
-    data[:, 1] .= Float64.(metrics.minibatch)
-    data[:, 2] .= Float64.(metrics.loss)
-    data[:, 3] .= Float64.(metrics.value_loss)
-    if hasproperty(metrics, :policy_loss)
-        data[:, 4] .= Float64.(metrics.policy_loss)
-        data[:, 5] .= Float64.(metrics.grad_norm)
-    else
-        data[:, 4] .= Float64.(metrics.regret_loss)
-        data[:, 5] .= Float64.(metrics.strategy_loss)
-        data[:, 6] .= Float64.(metrics.grad_norm)
-    end
-    return Wandb.Table(; data, columns)
-end
-
 # ── Fetching runs back for analysis ───────────────────────────────────────────
 
 """
