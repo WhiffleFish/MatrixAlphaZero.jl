@@ -54,7 +54,7 @@ epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * (epsilon_decay ^ (t - 1)), 0.1)
 transfer_weight = 0.1
 value_weight = 1.0f0
-regret_weight = 0.5f0
+regret_weight = 0.1f0
 strategy_weight = 0.5f0
 critic_type = "scalar"
 
