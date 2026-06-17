@@ -94,7 +94,7 @@ function add_scalar_metric!(pairs, prefix::AbstractString, name::Symbol, value)
     return pairs
 end
 
-function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az_player::Int; search_epsilon)
+function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az_player::Int)
     pairs = Pair{Symbol,Any}[]
     reward = result.reward
     stderr_reward = result.stderr_reward
@@ -104,8 +104,6 @@ function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az
     add_scalar_metric!(pairs, prefix, :attacker_goal_rate, result.attacker_goal_rate)
     add_scalar_metric!(pairs, prefix, :tagged_rate, result.tagged_rate)
     add_scalar_metric!(pairs, prefix, :timeout_rate, result.timeout_rate)
-    add_scalar_metric!(pairs, prefix, :max_steps, result.max_steps)
-    add_scalar_metric!(pairs, prefix, :search_epsilon, search_epsilon)
 
     extra_prefix = replace(prefix, "eval/" => "eval_extra/"; count = 1)
     add_scalar_metric!(pairs, extra_prefix, :stderr_reward, stderr_reward[az_player])
@@ -200,8 +198,8 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
     az_p1_result = rollout_eval(cb, az_p1)
     az_p2_result = rollout_eval(cb, az_p2)
     metrics = merge(
-        prefixed_az_eval_metrics(az_p1_result, "eval/az_p1_vs_heuristic", 1; search_epsilon = eval_search_epsilon(info)),
-        prefixed_az_eval_metrics(az_p2_result, "eval/heuristic_vs_az_p2", 2; search_epsilon = eval_search_epsilon(info)),
+        prefixed_az_eval_metrics(az_p1_result, "eval/az_p1_vs_heuristic", 1),
+        prefixed_az_eval_metrics(az_p2_result, "eval/heuristic_vs_az_p2", 2),
     )
     print_eval_summary(info.iter, az_p1_result, az_p2_result)
     isnothing(cb.wandb_cb) || cb.wandb_cb(merge((; iter = info.iter), metrics))

@@ -43,3 +43,28 @@
     @test !occursin("FittedRegretModel", rm_source)
     @test !occursin("SMOOSSearch", rm_source)
 end
+
+@testset "Dubin search solver diagnostics" begin
+    path = joinpath(@__DIR__, "..", "experiments", "dubin", "search_solver_diagnostics.jl")
+    source = read(path, String)
+
+    @test !isnothing(Meta.parse("begin\n$(source)\nend"))
+    @test occursin("ZeroSearchOracle", source)
+    @test occursin("run_mcts_trial", source)
+    @test occursin("run_smoos_trial", source)
+    @test occursin("search_solver_diagnostics_results", source)
+    @test !occursin("Pkg.activate(\"experiments/dubin", source)
+end
+
+@testset "Dubin search solver diagnostic plots" begin
+    path = joinpath(@__DIR__, "..", "experiments", "dubin", "plot_search_solver_diagnostics.jl")
+    source = read(path, String)
+
+    @test !isnothing(Meta.parse("begin\n$(source)\nend"))
+    @test occursin("summary_distributions", source)
+    @test occursin("root_strategies", source)
+    @test occursin("root_strategy_violins", source)
+    @test occursin("root_regrets", source)
+    @test occursin("root_regret_violins", source)
+    @test occursin("search_solver_diagnostics_results", source)
+end

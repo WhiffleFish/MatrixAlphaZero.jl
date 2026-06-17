@@ -14,8 +14,6 @@ function (cb::WandbCallback)(info::NamedTuple)
         v = getproperty(info, k)
         if v isa Number && isfinite(v)
             metrics[wandb_metric_key(k)] = v
-        elseif k == :minibatch_metrics
-            metrics[wandb_metric_key(k)] = minibatch_metrics_table(v)
         end
     end
     Wandb.log(cb.logger, metrics; step=info.iter)
@@ -31,7 +29,6 @@ const WANDB_TRAINING_HEALTH_KEYS = Set((
     :mean_policy_loss,
     :mean_grad_norm,
     :max_grad_norm,
-    :minibatch_metrics,
 ))
 
 const WANDB_ORACLE_QUALITY_KEYS = Set((
