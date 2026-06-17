@@ -33,6 +33,7 @@ const WANDB_TRAINING_HEALTH_KEYS = Set((
 
 const WANDB_ORACLE_QUALITY_KEYS = Set((
     :value_pred_mse,
+    :value_explained_variance,
     :regret_pred_mse,
     :strategy_entropy_p1,
     :strategy_entropy_p2,

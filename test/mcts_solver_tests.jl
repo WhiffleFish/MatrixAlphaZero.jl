@@ -72,6 +72,7 @@ using Random
     @test !hasproperty(oracle_stats, :target_regret_l2)
     @test hasproperty(oracle_stats, :target_policy_kl_p1)
     @test isfinite(oracle_stats.value_pred_mse)
+    @test hasproperty(oracle_stats, :value_explained_variance)
 
     callback_has_transfer_tau = Bool[]
     callback_has_minibatches = Bool[]

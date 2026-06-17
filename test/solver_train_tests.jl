@@ -121,9 +121,11 @@ using MarkovGames
     )
     @test hasproperty(oracle_stats, :target_regret_l2)
     @test hasproperty(oracle_stats, :policy_kl_p1)
+    @test hasproperty(oracle_stats, :value_explained_variance)
     @test !hasproperty(oracle_stats, :target_strategy_kl_p1)
     @test isfinite(oracle_stats.target_regret_l2)
     @test oracle_stats.target_regret_l2 > 0
+    @test isfinite(oracle_stats.value_explained_variance)
 
     oracle2 = Fixtures.simple_fitted_regret_model()
     before = deepcopy(Flux.state(oracle2))

@@ -9,6 +9,16 @@ strategy_entropy(p::AbstractVector{<:Real}) = -sum(x -> iszero(x) ? zero(x) : x 
 strategy_entropy(strategies::AbstractVector{<:AbstractVector}) = mean(strategy_entropy, strategies)
 mean_l2_norm(x::AbstractMatrix) = mean(sqrt(sum(abs2, col)) for col ∈ eachcol(x))
 
+function explained_variance(pred, target)
+    μ = sum(target) / length(target)
+    target_var = sum(abs2, target .- μ) / length(target)
+    target_var > eps(Float32) || return NaN32
+    residual = target .- pred
+    residual_μ = sum(residual) / length(residual)
+    residual_var = sum(abs2, residual .- residual_μ) / length(residual)
+    return Float32(1 - residual_var / target_var)
+end
+
 function selfplay_metrics(hists)
     ep_lengths = map(h -> length(h.v), hists)
     rewards = mapreduce(h -> h.r, vcat, hists)
@@ -91,8 +101,9 @@ function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=1
     skl_p1 = Float32(mean(kl_divergence(s_cur[1][:, i], s_t1[:, i]) for i ∈ 1:n))
     skl_p2 = Float32(mean(kl_divergence(s_cur[2][:, i], s_t2[:, i]) for i ∈ 1:n))
 
+    v_target = batch.v[idxs]
     v_pred = vec(value(oracle, X))
-    v_mse  = Float32(mean(abs2, v_pred .- batch.v[idxs]))
+    v_mse  = Float32(mean(abs2, v_pred .- v_target))
 
     policy_metrics = (;
         policy_entropy_p1   = h1,
@@ -102,6 +113,7 @@ function oracle_metrics(oracle, prev_oracle, batch::NamedTuple; n_samples::Int=1
         target_policy_kl_p1 = skl_p1,
         target_policy_kl_p2 = skl_p2,
         value_pred_mse      = v_mse,
+        value_explained_variance = explained_variance(v_pred, v_target),
     )
     hasproperty(batch, :regret) || return policy_metrics
 
@@ -123,6 +135,7 @@ function empty_oracle_metrics(batch::NamedTuple)
         target_policy_kl_p1 = NaN32,
         target_policy_kl_p2 = NaN32,
         value_pred_mse      = NaN32,
+        value_explained_variance = NaN32,
     )
     hasproperty(batch, :regret) || return base
     return merge(base, (; target_regret_l2=NaN32, regret_pred_mse=NaN32))
