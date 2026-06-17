@@ -57,6 +57,7 @@ These metrics summarize optimizer minibatches from the latest training update.
 |---|---|---|
 | `training_health/mean_loss` | Mean total training loss. | All modes. |
 | `training_health/mean_value_loss` | Mean critic/value loss. | All modes. |
+| `training_health/learning_rate` | Learning rate used for the current optimizer update after decay and clipping. | All modes. |
 | `training_health/mean_grad_norm` | Mean gradient norm across minibatches. | All modes. |
 | `training_health/max_grad_norm` | Maximum gradient norm across minibatches. | All modes. |
 | `training_health/mean_regret_loss` | Mean regret-head loss. | `FittedRegretModel` / SM-OOS. |
@@ -143,6 +144,8 @@ Dubin scripts log the following common config keys:
 | `width` | Neural network hidden width used by the experiment script. |
 | `lr` | Learning rate. |
 | `lr_decay` | Per-update learning-rate decay factor. |
+| `lr_min` | Lower bound applied to the decayed learning rate. |
+| `lr_max` | Upper bound applied to the decayed learning rate. |
 | `ema` | Whether callback/final oracle uses EMA weights. |
 | `ema_decay` | EMA decay factor. |
 | `gae_lambda` | GAE lambda for SM-OOS target construction. |

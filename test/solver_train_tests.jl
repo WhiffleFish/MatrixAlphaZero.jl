@@ -63,6 +63,17 @@ using MarkovGames
     @test solver.sim_depth == 7
     @test solver.ema
 
+    bounded_lr_solver = AZ.AlphaZeroSolver(
+        search=train_search,
+        lr=1f-3,
+        lr_decay=0.5f0,
+        lr_min=2f-4,
+        lr_max=8f-4,
+    )
+    @test AZ.learning_rate(bounded_lr_solver, 0) == 8f-4
+    @test AZ.learning_rate(bounded_lr_solver, 1) == 5f-4
+    @test AZ.learning_rate(bounded_lr_solver, 10) == 2f-4
+
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
     @test hasproperty(info, :tree)
@@ -185,12 +196,14 @@ using MarkovGames
     callback_steps = Int[]
     callback_sim_depths = Int[]
     callback_transfer_taus = Float64[]
+    callback_learning_rates = Float32[]
     callback_has_minibatches = Bool[]
     planner_out = MarkovGames.solve(solver, game; cb=info -> begin
         push!(callback_iters, info.iter)
         hasproperty(info, :steps_done) && push!(callback_steps, info.steps_done)
         hasproperty(info, :sim_depth) && push!(callback_sim_depths, info.sim_depth)
         hasproperty(info, :transfer_tau) && push!(callback_transfer_taus, info.transfer_tau)
+        hasproperty(info, :learning_rate) && push!(callback_learning_rates, info.learning_rate)
         push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
     end)
     @test planner_out isa AZ.AlphaZeroPlanner
@@ -199,6 +212,7 @@ using MarkovGames
     @test callback_iters == [0, 1]
     @test callback_sim_depths == [7, 7]
     @test callback_transfer_taus == [0.0, 0.0]
+    @test callback_learning_rates == [solver.lr, solver.lr]
     @test planner_out.search isa AZ.SMOOSSearch
 
     no_ema_oracle = Fixtures.simple_fitted_regret_model()

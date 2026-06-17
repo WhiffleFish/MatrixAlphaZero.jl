@@ -31,6 +31,7 @@ function (cb::MetricsCallback)(info::NamedTuple)
     if hasproperty(info, :mean_grad_norm)
         println("  grad norm:   mean=$(_r3(info.mean_grad_norm))  max=$(_r3(info.max_grad_norm))")
     end
+    hasproperty(info, :learning_rate) && println("  learning rate: $(info.learning_rate)")
     if hasproperty(info, :strategy_entropy_p1)
         println("  entropy:     p1=$(_r3(info.strategy_entropy_p1))  p2=$(_r3(info.strategy_entropy_p2))")
         println("  strategy Δkl:  p1=$(_r(info.strategy_kl_p1))  p2=$(_r(info.strategy_kl_p2))")

@@ -27,6 +27,7 @@ const WANDB_TRAINING_HEALTH_KEYS = Set((
     :mean_regret_loss,
     :mean_strategy_loss,
     :mean_policy_loss,
+    :learning_rate,
     :mean_grad_norm,
     :max_grad_norm,
 ))

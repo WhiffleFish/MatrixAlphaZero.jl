@@ -9,6 +9,8 @@
     num_batches     :: Int     = 4
     lr              :: Float32 = 3f-4
     lr_decay        :: Float32 = 1.0f0
+    lr_min          :: Float32 = 0.0f0
+    lr_max          :: Float32 = Float32(Inf)
     ema             :: Bool    = true
     ema_decay       :: Float32 = 0.99f0
     gae_lambda      :: Float64 = 0.95
@@ -19,6 +21,9 @@
     )
     rng             :: RNG = Random.default_rng()
 end
+
+learning_rate(sol::AlphaZeroSolver, update::Integer) =
+    clamp(sol.lr * sol.lr_decay ^ update, sol.lr_min, sol.lr_max)
 
 function ema_update!(ema_model, model, decay::Real)
     for (ema_param, param) in zip(Flux.trainables(ema_model), Flux.trainables(model))
@@ -119,7 +124,10 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     sol.max_steps > 0 || throw(ArgumentError("max_steps must be positive"))
     sol.num_steps > 0 || throw(ArgumentError("num_steps must be positive"))
     sol.sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
-    0 <= sol.gae_lambda <= 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
+    sol.lr > 0 || throw(ArgumentError("lr must be positive"))
+    sol.lr_decay > 0 || throw(ArgumentError("lr_decay must be positive"))
+    0 ≤ sol.lr_min ≤ sol.lr_max || throw(ArgumentError("lr bounds must satisfy 0 <= lr_min <= lr_max"))
+    0 ≤ sol.gae_lambda ≤ 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
     distributed = Distributed.nprocs() > 1
     online_oracle = oracle(sol.search)
     ema_oracle = deepcopy(online_oracle)
@@ -130,6 +138,8 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     steps_done = 0
     update = 0
     search_state = initial_search_state(sol.search)
+    active_learning_rate = learning_rate(sol, update)
+    active_learning_rate == sol.lr || Flux.Optimisers.adjust!(opt_state; eta=active_learning_rate)
     call(cb, merge((;
         oracle=cb_oracle,
         iter=0,
@@ -137,6 +147,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         steps_done,
         max_steps=sol.max_steps,
         sim_depth=sol.sim_depth,
+        learning_rate=active_learning_rate,
         exploration_epsilon=sol.search.ϵ(1),
         online_oracle,
         ema_oracle=sol.ema ? ema_oracle : nothing,
@@ -155,12 +166,11 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         train_stats = train!(sol, online_oracle, batch; opt_state)
         sol.ema && ema_update!(ema_oracle, online_oracle, sol.ema_decay)
         search_state = advance_search_state(sol.search, search_state)
-        if sol.lr_decay < 1f0
-            Flux.Optimisers.adjust!(opt_state; eta = sol.lr * sol.lr_decay ^ update)
-        end
+        next_learning_rate = learning_rate(sol, update)
+        next_learning_rate == active_learning_rate || Flux.Optimisers.adjust!(opt_state; eta=next_learning_rate)
         cb_oracle = sol.ema ? ema_oracle : online_oracle
         cb_info = merge(
-            merge((oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, exploration_epsilon=ϵ, online_oracle, ema_oracle=sol.ema ? ema_oracle : nothing), search_callback_state(sol.search, search_state)),
+            merge((oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, learning_rate=active_learning_rate, exploration_epsilon=ϵ, online_oracle, ema_oracle=sol.ema ? ema_oracle : nothing), search_callback_state(sol.search, search_state)),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),
@@ -169,6 +179,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         )
         call(cb, cb_info)
         prev_cb_oracle = deepcopy(cb_oracle)
+        active_learning_rate = next_learning_rate
     end
     finish!(progress)
     final_oracle = sol.ema ? ema_oracle : online_oracle
