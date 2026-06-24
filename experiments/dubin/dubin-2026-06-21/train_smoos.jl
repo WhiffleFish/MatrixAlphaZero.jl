@@ -15,18 +15,19 @@ using Random
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
-const EXPERIMENT_NAME = "dubin-2026-06-15"
+const EXPERIMENT_NAME = "dubin-2026-06-17"
+const SEARCH_NAME = "smoos"
 
 args = ExperimentTools.parse_commandline(
     max_steps = 10_000_000,
     num_steps = 1024 * 8,
     update_epochs = 2,
     num_batches = 4,
-    tree_queries = 500,
+    tree_queries = 1_000,
     max_depth = 5,
     sim_depth = 50,
-    runs = 50,
-    every = 5,
+    runs = 500,
+    every = 10,
 )
 
 p = addprocs(args["addprocs"])
@@ -42,7 +43,7 @@ eval_runs = args["runs"]
 eval_every = args["every"]
 
 width = 32
-lr = 3f-4
+lr = 1f-3
 lr_decay = 0.999f0
 lr_min = 1f-5
 lr_max = lr
@@ -51,10 +52,10 @@ ema_decay = 0.98f0
 gae_lambda = 0.95
 epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * (epsilon_decay ^ (t - 1)), 0.1)
-transfer_weight = 0.0
+transfer_weight = 0.1
 value_weight = 1.0f0
-regret_weight = 0.0f0
-strategy_weight = 0.0f0
+regret_weight = 0.1f0
+strategy_weight = 0.5f0
 critic_type = "scalar"
 
 @everywhere begin
@@ -154,7 +155,6 @@ struct StatRolloutEvalCallback{G,S,W}
     eval_every::Int
     oos_iterations::Int
     search_depth::Int
-    transfer_weight::Float64
     wandb_cb::W
 end
 
@@ -191,7 +191,6 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         max_depth = cb.search_depth,
         ϵ = _ -> eval_oos_epsilon(info),
         τ = eval_transfer_tau(info),
-        transfer_weight = cb.transfer_weight,
     )
     planner = AZ.AlphaZeroPlanner(cb.game, search)
 
@@ -225,9 +224,9 @@ oracle = init_oracle(
     strategy_weight,
 )
 experiment_dir = @__DIR__
-models_dir = joinpath(experiment_dir, "models")
+models_dir = joinpath(experiment_dir, "models_smoos")
 mkpath(experiment_dir)
-jldsave(joinpath(experiment_dir, "oracle.jld2"); oracle)
+jldsave(joinpath(experiment_dir, "oracle_smoos.jld2"); oracle)
 
 search = AZ.SMOOSSearch(;
     oracle,
@@ -257,9 +256,11 @@ solver = AZ.AlphaZeroSolver(
 wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
     WandbCallback(
         project = "Matrix AlphaZero",
-        group = EXPERIMENT_NAME,
+        group = "$(EXPERIMENT_NAME)-$(SEARCH_NAME)",
         config = Dict(
             "experiment" => EXPERIMENT_NAME,
+            "search/name" => SEARCH_NAME,
+            "search/type" => "SMOOSSearch",
             "game" => "DubinMG",
             "search/oos_iterations" => search.oos_iterations,
             "search/max_depth" => search.max_depth,
@@ -301,7 +302,6 @@ stat_eval_cb = StatRolloutEvalCallback(
     eval_every,
     oos_iterations,
     search_depth,
-    transfer_weight,
     wandb_cb,
 )
 

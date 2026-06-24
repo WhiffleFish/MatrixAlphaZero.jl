@@ -154,7 +154,6 @@ struct StatRolloutEvalCallback{G,S,W}
     eval_every::Int
     oos_iterations::Int
     search_depth::Int
-    transfer_weight::Float64
     wandb_cb::W
 end
 
@@ -191,7 +190,6 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         max_depth = cb.search_depth,
         ϵ = _ -> eval_oos_epsilon(info),
         τ = eval_transfer_tau(info),
-        transfer_weight = cb.transfer_weight,
     )
     planner = AZ.AlphaZeroPlanner(cb.game, search)
 
@@ -301,7 +299,6 @@ stat_eval_cb = StatRolloutEvalCallback(
     eval_every,
     oos_iterations,
     search_depth,
-    transfer_weight,
     wandb_cb,
 )
 

@@ -15,7 +15,8 @@ using Random
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
-const EXPERIMENT_NAME = "dubin-2026-06-15"
+const EXPERIMENT_NAME = "dubin-2026-06-17"
+const SEARCH_NAME = "regret_matching"
 
 args = ExperimentTools.parse_commandline(
     max_steps = 10_000_000,
@@ -35,7 +36,7 @@ max_steps = args["max_steps"]
 num_steps = args["num_steps"]
 update_epochs = args["update_epochs"]
 num_batches = args["num_batches"]
-oos_iterations = args["tree_queries"]
+tree_queries = args["tree_queries"]
 search_depth = args["max_depth"]
 sim_depth = args["sim_depth"]
 eval_runs = args["runs"]
@@ -51,10 +52,11 @@ ema_decay = 0.98f0
 gae_lambda = 0.95
 epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * (epsilon_decay ^ (t - 1)), 0.1)
-transfer_weight = 0.0
+max_time = Inf
+backup = :sample
+value_target = :search
 value_weight = 1.0f0
-regret_weight = 0.0f0
-strategy_weight = 0.0f0
+policy_weight = 1.0f0
 critic_type = "scalar"
 
 @everywhere begin
@@ -71,25 +73,19 @@ game = DubinMG(V = (1.0, 1.0))
 na1, na2 = length.(actions(game))
 s0 = JointDubinState(SA[1, 1, deg2rad(45)], SA[8, 7, deg2rad(180)])
 
-function init_oracle(width, na1, na2; value_weight, regret_weight, strategy_weight)
+function init_oracle(width, na1, na2; value_weight, policy_weight)
     trunk = Chain(Dense(8 => width, tanh), Dense(width => width, tanh))
-    regret_head = AZ.MultiActor(
-        Chain(Dense(width => width, tanh), Dense(width => na1)),
-        Chain(Dense(width => width, tanh), Dense(width => na2)),
-    )
-    strategy_head = AZ.MultiActor(
+    actor = AZ.MultiActor(
         Chain(Dense(width => width, tanh), Dense(width => na1)),
         Chain(Dense(width => width, tanh), Dense(width => na2)),
     )
     critic = Chain(Dense(width => width, tanh), Dense(width => 1))
-    return AZ.FittedRegretModel(
+    return AZ.ActorCritic(
         trunk,
-        regret_head,
-        strategy_head,
+        actor,
         critic;
         value_weight,
-        regret_weight,
-        strategy_weight,
+        policy_weight,
     )
 end
 
@@ -133,7 +129,7 @@ function print_eval_summary(iter, az_p1_result, az_p2_result)
     return nothing
 end
 
-function eval_oos_epsilon(info::NamedTuple)
+function eval_search_epsilon(info::NamedTuple)
     if hasproperty(info, :exploration_epsilon)
         return info.exploration_epsilon
     elseif hasproperty(info, :update)
@@ -143,18 +139,14 @@ function eval_oos_epsilon(info::NamedTuple)
     end
 end
 
-eval_transfer_tau(info::NamedTuple) =
-    hasproperty(info, :transfer_tau) ? info.transfer_tau : 0.0
-
 struct StatRolloutEvalCallback{G,S,W}
     game::G
     s0::S
     n::Int
     max_steps::Int
     eval_every::Int
-    oos_iterations::Int
+    tree_queries::Int
     search_depth::Int
-    transfer_weight::Float64
     wandb_cb::W
 end
 
@@ -185,13 +177,14 @@ end
 function (cb::StatRolloutEvalCallback)(info::NamedTuple)
     hasproperty(info, :iter) || return
     iszero(mod(info.iter,cb.eval_every)) || return
-    search = AZ.SMOOSSearch(;
+    search = AZ.MCTSSearch(;
         oracle = info.oracle,
-        oos_iterations = cb.oos_iterations,
+        tree_queries = cb.tree_queries,
         max_depth = cb.search_depth,
-        ϵ = _ -> eval_oos_epsilon(info),
-        τ = eval_transfer_tau(info),
-        transfer_weight = cb.transfer_weight,
+        max_time,
+        ϵ = _ -> eval_search_epsilon(info),
+        search_style = AZ.RegretMatchingSearch(; backup),
+        value_target,
     )
     planner = AZ.AlphaZeroPlanner(cb.game, search)
 
@@ -221,21 +214,21 @@ oracle = init_oracle(
     na1,
     na2;
     value_weight,
-    regret_weight,
-    strategy_weight,
+    policy_weight,
 )
 experiment_dir = @__DIR__
-models_dir = joinpath(experiment_dir, "models")
+models_dir = joinpath(experiment_dir, "models_regret_matching")
 mkpath(experiment_dir)
-jldsave(joinpath(experiment_dir, "oracle.jld2"); oracle)
+jldsave(joinpath(experiment_dir, "oracle_regret_matching.jld2"); oracle)
 
-search = AZ.SMOOSSearch(;
+search = AZ.MCTSSearch(;
     oracle,
-    oos_iterations,
+    tree_queries,
     max_depth = search_depth,
-    τ = 0.0,
-    transfer_weight,
+    max_time,
     ϵ = epsilon_schedule,
+    search_style = AZ.RegretMatchingSearch(; backup),
+    value_target,
 )
 
 solver = AZ.AlphaZeroSolver(
@@ -257,14 +250,17 @@ solver = AZ.AlphaZeroSolver(
 wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
     WandbCallback(
         project = "Matrix AlphaZero",
-        group = EXPERIMENT_NAME,
+        group = "$(EXPERIMENT_NAME)-$(SEARCH_NAME)",
         config = Dict(
             "experiment" => EXPERIMENT_NAME,
+            "search/name" => SEARCH_NAME,
+            "search/type" => "MCTSSearch",
             "game" => "DubinMG",
-            "search/oos_iterations" => search.oos_iterations,
+            "search/tree_queries" => search.tree_queries,
             "search/max_depth" => search.max_depth,
-            "search/transfer_weight" => search.transfer_weight,
-            "search/tau" => search.τ,
+            "search/max_time" => search.max_time,
+            "search/backup" => string(search.search_style.backup),
+            "search/value_target" => string(search.value_target),
             "sim_depth" => sim_depth,
             "max_steps" => max_steps,
             "num_steps" => num_steps,
@@ -279,8 +275,7 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "ema_decay" => ema_decay,
             "gae_lambda" => gae_lambda,
             "oracle/value_weight" => oracle.value_weight,
-            "oracle/regret_weight" => oracle.regret_weight,
-            "oracle/strategy_weight" => oracle.strategy_weight,
+            "oracle/policy_weight" => oracle.policy_weight,
             "critic_type" => critic_type,
             "epsilon_initial" => epsilon_schedule(1),
             "epsilon_decay" => epsilon_decay,
@@ -299,9 +294,8 @@ stat_eval_cb = StatRolloutEvalCallback(
     eval_runs,
     sim_depth,
     eval_every,
-    oos_iterations,
+    tree_queries,
     search_depth,
-    transfer_weight,
     wandb_cb,
 )
 
