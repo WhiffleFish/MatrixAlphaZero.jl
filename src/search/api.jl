@@ -2,6 +2,10 @@
     oos_iterations  :: Int      = 150
     τ               :: Float64  = 0.0
     transfer_weight :: Float64  = 0.01
+    # Payoff bound Δ from the regret-transfer theorem. Transferred regrets are
+    # projected so their positive-part norm satisfies Φ(wR̂) ≤ wT₁|A|Δ²; Inf
+    # disables the projection.
+    transfer_payoff_bound :: Float64 = Inf
     max_depth       :: Int      = 5
     ϵ               :: E        = t -> 0.3 * (0.90 ^ (t-1))
     oracle          :: Oracle
@@ -12,6 +16,7 @@ function with_oracle(search::SMOOSSearch, oracle; kwargs...)
         oos_iterations = search.oos_iterations,
         τ = search.τ,
         transfer_weight = search.transfer_weight,
+        transfer_payoff_bound = search.transfer_payoff_bound,
         max_depth = search.max_depth,
         ϵ = search.ϵ,
         oracle,

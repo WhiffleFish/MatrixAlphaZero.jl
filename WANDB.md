@@ -162,6 +162,7 @@ SM-OOS config keys:
 | `search/oos_iterations` | Number of OOS iterations per search. |
 | `search/max_depth` | Search depth limit. |
 | `search/transfer_weight` | Transfer-weight parameter for SM-OOS state updates. |
+| `search/transfer_payoff_bound` | Payoff bound Δ used to project transferred regrets onto the theorem's weight condition (`Inf` disables). |
 | `search/tau` | Initial transfer temperature/state. |
 | `oracle/value_weight` | Value-loss weight. |
 | `oracle/regret_weight` | Regret-loss weight. |

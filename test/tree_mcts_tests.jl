@@ -30,11 +30,39 @@ using Random
     @test isapprox(tree.strategy[1][1], retained_mass .* [0.25, 0.75]; atol=1e-6)
     @test isapprox(tree.strategy[2][1], retained_mass .* [0.6, 0.4]; atol=1e-6)
 
+    # Targets are decontaminated: with zero search iterations the prior
+    # initialization is subtracted back out, leaving no self-distillation.
     yr, ys = AZ.root_targets(params, tree, game, 1)
-    @test isapprox(yr[1], sqrt(transfer_weight) .* [0.8, -0.2]; atol=1e-6)
-    @test isapprox(yr[2], sqrt(transfer_weight) .* [-0.1, 0.9]; atol=1e-6)
-    @test isapprox(ys[1], [0.25, 0.75]; atol=1e-6)
-    @test isapprox(ys[2], [0.6, 0.4]; atol=1e-6)
+    @test isapprox(yr[1], [0.0, 0.0]; atol=1e-9)
+    @test isapprox(yr[2], [0.0, 0.0]; atol=1e-9)
+    @test isapprox(ys[1], [0.5, 0.5]; atol=1e-6)
+    @test isapprox(ys[2], [0.5, 0.5]; atol=1e-6)
+
+    # Potential-bound projection: with a finite payoff bound Δ the transferred
+    # regret initialization satisfies ||Q⁺||₂ ≤ sqrt(τ|A|)Δ, direction preserved.
+    Δ = 0.1
+    bounded_params = AZ.SMOOSSearch(
+        oos_iterations=0,
+        τ=retained_mass,
+        transfer_weight=transfer_weight,
+        transfer_payoff_bound=Δ,
+        max_depth=2,
+        oracle=oracle,
+    )
+    bounded_tree = AZ.Tree(bounded_params, game, false)
+    AZ.expand_node!(bounded_tree, 1, game, bounded_params)
+    q1 = bounded_tree.regret[1][1]
+    pot = sqrt(sum(x -> max(x, 0.0)^2, q1))
+    bound = sqrt(retained_mass * 2) * Δ
+    @test pot ≤ bound + 1e-9
+    @test isapprox(pot, bound; atol=1e-9)  # unprojected mass exceeds bound, so it lands on it
+    @test isapprox(q1[1] / q1[2], 0.8 / -0.2; atol=1e-9)
+    # strategy initialization is unaffected by the regret projection
+    @test isapprox(bounded_tree.strategy[1][1], retained_mass .* [0.25, 0.75]; atol=1e-6)
+    # decontamination subtracts the projected init exactly
+    yr_b, ys_b = AZ.root_targets(bounded_params, bounded_tree, game, 1)
+    @test isapprox(yr_b[1], [0.0, 0.0]; atol=1e-9)
+    @test isapprox(ys_b[1], [0.5, 0.5]; atol=1e-6)
 
     @test AZ.uniform(3) == fill(1 / 3, 3)
     @test AZ.eps_exploration([1.0, 0.0], 0.2) ≈ [0.9, 0.1]

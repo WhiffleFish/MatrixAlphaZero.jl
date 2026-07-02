@@ -53,6 +53,9 @@ gae_lambda = 0.95
 epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * (epsilon_decay ^ (t - 1)), 0.1)
 transfer_weight = 0.1
+# Payoff bound Δ for the regret-transfer weight condition. Depth-limited dubin
+# returns are bounded by |r| + γᴰ|V̂| ≲ 2.
+transfer_payoff_bound = 2.0
 value_weight = 1.0f0
 regret_weight = 0.1f0
 strategy_weight = 0.5f0
@@ -191,6 +194,8 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         max_depth = cb.search_depth,
         ϵ = _ -> eval_oos_epsilon(info),
         τ = eval_transfer_tau(info),
+        transfer_weight,
+        transfer_payoff_bound,
     )
     planner = AZ.AlphaZeroPlanner(cb.game, search)
 
@@ -234,6 +239,7 @@ search = AZ.SMOOSSearch(;
     max_depth = search_depth,
     τ = 0.0,
     transfer_weight,
+    transfer_payoff_bound,
     ϵ = epsilon_schedule,
 )
 
@@ -265,6 +271,7 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "search/oos_iterations" => search.oos_iterations,
             "search/max_depth" => search.max_depth,
             "search/transfer_weight" => search.transfer_weight,
+            "search/transfer_payoff_bound" => search.transfer_payoff_bound,
             "search/tau" => search.τ,
             "sim_depth" => sim_depth,
             "max_steps" => max_steps,

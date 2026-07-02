@@ -17,18 +17,42 @@ end
 Tree(::SMOOSSearch, game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
 Tree(game::MG, s=rand(initialstate(game))) = SMOOSTree(game, s)
 
-function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSSearch)
-    isempty(tree.regret[1][h]) || return nothing
-    s = tree.s[h]
+# Project transferred regrets onto the feasible set of the regret-transfer
+# theorem: the weight condition Φ(wR̂ᶜ) ≤ wT₁|A|Δ² requires the positive-part
+# norm of the initialization to be at most sqrt(τ|A|)Δ (with wT₁ = τ).
+function project_transfer_regret!(q::Vector{Float64}, τ::Float64, nA::Int, Δ::Float64)
+    isfinite(Δ) || return q
+    bound = sqrt(τ * nA) * Δ
+    potential = sqrt(sum(x -> max(x, 0.0)^2, q))
+    potential > bound && (q .*= bound / potential)
+    return q
+end
+
+# The exact accumulator initialization injected at node expansion. Kept as a
+# separate function so root_targets can subtract it back out of the training
+# targets: the network must never be trained on its own prior.
+function transfer_prior(params::SMOOSSearch, game::MG, s)
     A1, A2 = actions(game)
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
     # params.τ is already discounted: τ = wM, so w*sqrt(M) = sqrt(w*τ).
     regret_mass = sqrt(params.transfer_weight * params.τ)
-    tree.regret[1][h] = regret_mass .* Float64.(r̂[1])
-    tree.regret[2][h] = regret_mass .* Float64.(r̂[2])
-    tree.strategy[1][h] = params.τ .* normalized_or_uniform(ŝ[1])
-    tree.strategy[2][h] = params.τ .* normalized_or_uniform(ŝ[2])
+    Δ = params.transfer_payoff_bound
+    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), params.τ, length(A1), Δ)
+    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), params.τ, length(A2), Δ)
+    s1 = params.τ .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = params.τ .* normalized_or_uniform(Float64.(ŝ[2]))
+    return (r1, r2), (s1, s2)
+end
+
+function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSSearch)
+    isempty(tree.regret[1][h]) || return nothing
+    A1, A2 = actions(game)
+    (r1, r2), (s1, s2) = transfer_prior(params, game, tree.s[h])
+    tree.regret[1][h] = r1
+    tree.regret[2][h] = r2
+    tree.strategy[1][h] = s1
+    tree.strategy[2][h] = s2
     @assert length(tree.regret[1][h]) == length(A1)
     @assert length(tree.regret[2][h]) == length(A2)
     return nothing
@@ -49,16 +73,18 @@ end
 
 function root_targets(params::SMOOSSearch, tree::SMOOSTree, game::MG, h::Int=1)
     expand_node!(tree, h, game, params)
-    strategy_denom = params.τ + params.oos_iterations
-    strategy_denom = strategy_denom > 0 ? strategy_denom : 1.0
-    regret_denom = sqrt(strategy_denom)
+    # Targets are computed from fresh search evidence only: the prior mass
+    # injected at expansion is subtracted back out so the oracle is never
+    # trained on its own predictions (self-distillation echo chamber).
+    (r1_init, r2_init), (s1_init, s2_init) = transfer_prior(params, game, tree.s[h])
+    regret_denom = sqrt(max(Float64(params.oos_iterations), 1.0))
     yr = (
-        Float64.(tree.regret[1][h]) ./ regret_denom,
-        Float64.(tree.regret[2][h]) ./ regret_denom,
+        (Float64.(tree.regret[1][h]) .- r1_init) ./ regret_denom,
+        (Float64.(tree.regret[2][h]) .- r2_init) ./ regret_denom,
     )
     ys = (
-        normalized_or_uniform(tree.strategy[1][h]),
-        normalized_or_uniform(tree.strategy[2][h]),
+        normalized_or_uniform(max.(Float64.(tree.strategy[1][h]) .- s1_init, 0.0)),
+        normalized_or_uniform(max.(Float64.(tree.strategy[2][h]) .- s2_init, 0.0)),
     )
     A1, A2 = actions(game)
     length(yr[1]) == length(A1) || error("player 1 regret target has wrong action dimension")
