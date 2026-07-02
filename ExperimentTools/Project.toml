@@ -5,6 +5,7 @@ authors = ["WhiffleFish <tylertronics@gmail.com>"]
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+CleanRL = "d512bf86-4aca-4ede-a06a-81c43f0328ad"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
@@ -25,6 +26,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Wandb = "ad70616a-06c9-5745-b1f1-6a5f42545108"
 
 [sources]
+CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
 MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
 MatrixAlphaZero = {path = ".."}
 POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}

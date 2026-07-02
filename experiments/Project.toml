@@ -1,4 +1,5 @@
 [deps]
+CleanRL = "d512bf86-4aca-4ede-a06a-81c43f0328ad"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ExperimentTools = "7fde32a4-1ade-4293-987a-ae7babf65c50"
 FictitiousPlay = "85cfefb4-da36-4fd5-a940-62c4cfb2e80c"
@@ -16,6 +17,7 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 
 [sources]
+CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
 ExperimentTools = {path = "../ExperimentTools"}
 FictitiousPlay = {url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
 MarkovGames = {rev = "main", url = "git@github.com:WhiffleFish/MarkovGames.jl.git"}

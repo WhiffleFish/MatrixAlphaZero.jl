@@ -23,11 +23,18 @@ using Base.Threads
 using ProgressMeter
 using Wandb
 using PythonCall
+using CleanRL
 
 include("helpers.jl")
 export @figdir
 
 include("exploitability.jl")
+
+include("ppo_best_response.jl")
+export OracleStrategyPolicy, ProjectedPlayerPolicy, ActorPlayerPolicy
+export PPOBestResponseMDP, PPOBestResponseConfig
+export train_ppo_best_response, ppo_best_response_joint_policy
+export ZeroSearchOracle
 
 include("matchups.jl")
 export JointPolicy, SinglePlayerAlphaZeroPolicy

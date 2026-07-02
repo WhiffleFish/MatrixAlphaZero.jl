@@ -16,3 +16,6 @@ wandb/
 .CondaPkg/
 
 venv/
+
+logs
+tensorboard
