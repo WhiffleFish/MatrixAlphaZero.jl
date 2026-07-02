@@ -195,8 +195,11 @@ function smoos_sim(search::SMOOSSearch, game::MG, s; progress=false, ϵ=0.30, si
         (yr, ys), _info = fitted_smoos_info(search, game, s; ϵ)
         search_time = time() - search_start
 
-        x = normalized_or_uniform(ys[1])
-        y = normalized_or_uniform(ys[2])
+        # Mix in the same ϵ used for in-tree exploration so executed self-play
+        # actions never collapse to a pure argmax; training targets (yr, ys)
+        # are left unperturbed.
+        x = eps_exploration(normalized_or_uniform(ys[1]), ϵ)
+        y = eps_exploration(normalized_or_uniform(ys[2]), ϵ)
         a_idxs = Tuple(action_idx_from_probs(x, y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
         sp, r = @gen(:sp, :r)(game, s, a)
