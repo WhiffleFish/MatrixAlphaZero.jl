@@ -41,6 +41,13 @@ end
     search_style    :: RegretMatchingSearch = RegretMatchingSearch()
     oracle          :: Oracle
     value_target    :: Symbol   = :search
+    # Regret transfer (RegretMatchingSearch + FittedRegretModel oracle only):
+    # warm-start node cumulative regrets from the learned regret prior. Because
+    # the regret-matching backup is exact (full matrix q = r + γV̂, no importance
+    # sampling), transferred regrets are bounded per iteration by construction.
+    τ                     :: Float64 = 0.0
+    transfer_weight       :: Float64 = 0.0
+    transfer_payoff_bound :: Float64 = Inf
 end
 
 function with_oracle(search::MCTSSearch, oracle; kwargs...)
@@ -52,6 +59,9 @@ function with_oracle(search::MCTSSearch, oracle; kwargs...)
         search_style = search.search_style,
         oracle,
         value_target = search.value_target,
+        τ = search.τ,
+        transfer_weight = search.transfer_weight,
+        transfer_payoff_bound = search.transfer_payoff_bound,
         kwargs...,
     )
 end

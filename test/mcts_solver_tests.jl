@@ -29,7 +29,10 @@ using Random
     @test !hasproperty(solver, :smoos_params)
     @test !hasproperty(solver, :mcts_params)
     @test !hasproperty(solver, :transfer_weight)
-    @test !hasproperty(solver.search, :transfer_weight)
+    # MCTSSearch now supports regret transfer, but defaults to disabled so plain
+    # (ActorCritic, tree-search-only) runs are unaffected.
+    @test solver.search.transfer_weight == 0.0
+    @test !AZ.has_regret_transfer(solver.search)
     @test AZ.AlphaZeroPlanner(solver, game).search isa AZ.MCTSSearch
     @test AZ.AlphaZeroPlanner(game, solver).search.max_depth == 2
 

@@ -125,6 +125,10 @@ using MarkovGames
     @test size(s_target[1]) == (2, 4)
     @test sort(vcat(collect.(AZ.minibatches(collect(1:5), 2))...)) == collect(1:5)
     @test AZ.l2_penalty(Float32[1, 2, 3]) ≈ Float32(14 / 3)
+    # oracle_metrics subsamples the batch with replacement via the global RNG;
+    # seed so this 4-element batch draws a variance-nonzero value subset
+    # regardless of upstream RNG state (explained variance is NaN on zero var).
+    Random.seed!(1)
     oracle_stats = AZ.oracle_metrics(
         Fixtures.simple_fitted_regret_model(),
         Fixtures.simple_fitted_regret_model(),

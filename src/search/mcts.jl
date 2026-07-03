@@ -120,6 +120,60 @@ function oracle_policy(params::MCTSSearch, game::MG, tree::SearchTree, s_idx::In
     return Float64.(x), Float64.(y)
 end
 
+has_regret_transfer(params::MCTSSearch) = params.transfer_weight > 0 && params.τ > 0
+
+# Warm-start init injected into a node's regret/policy_sum accumulators, mirroring
+# SM-OOS `transfer_prior`. The exact-backup regret matching then runs on top of
+# this, and the same init is subtracted back out of the training targets.
+function mcts_transfer_prior(params::MCTSSearch, game::MG, s, na1::Int, na2::Int)
+    r̂ = state_regret(params.oracle, game, s)
+    ŝ = state_strategy(params.oracle, game, s)
+    regret_mass = sqrt(params.transfer_weight * params.τ)
+    Δ = params.transfer_payoff_bound
+    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), params.τ, na1, Δ)
+    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), params.τ, na2, Δ)
+    s1 = params.τ .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = params.τ .* normalized_or_uniform(Float64.(ŝ[2]))
+    return (r1, r2), (s1, s2)
+end
+
+function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game::MG)
+    has_regret_transfer(params) || return nothing
+    na1, na2 = size(tree.n_sa[s_idx])
+    (r1, r2), (s1, s2) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2)
+    tree.regret[1][s_idx] .= r1
+    tree.regret[2][s_idx] .= r2
+    tree.policy_sum[1][s_idx] .= s1
+    tree.policy_sum[2][s_idx] .= s2
+    return nothing
+end
+
+# Decontaminated regret/strategy training targets at a search node: the injected
+# transfer prior is subtracted so the oracle trains only on fresh search evidence.
+function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int)
+    A1, A2 = actions(game)
+    na1, na2 = length(A1), length(A2)
+    if has_regret_transfer(params)
+        (r1i, r2i), (s1i, s2i) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2)
+    else
+        r1i, r2i = zeros(na1), zeros(na2)
+        s1i, s2i = zeros(na1), zeros(na2)
+    end
+    T = tree.n_s[s_idx]
+    strategy_denom = params.τ + T
+    strategy_denom = strategy_denom > 0 ? strategy_denom : 1.0
+    regret_denom = sqrt(strategy_denom)
+    yr = (
+        (Float64.(tree.regret[1][s_idx]) .- r1i) ./ regret_denom,
+        (Float64.(tree.regret[2][s_idx]) .- r2i) ./ regret_denom,
+    )
+    ys = (
+        normalized_or_uniform(max.(Float64.(tree.policy_sum[1][s_idx]) .- s1i, 0.0)),
+        normalized_or_uniform(max.(Float64.(tree.policy_sum[2][s_idx]) .- s2i, 0.0)),
+    )
+    return yr, ys
+end
+
 function empirical_policy(tree::SearchTree, s_idx::Int)
     counts = tree.n_sa[s_idx]
     x = vec(sum(counts; dims=2))
@@ -201,6 +255,7 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         return leaf_value
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, params.oracle)
+        warmstart_node!(params, tree, s_idx, game)
         leaf_value = oracle_state_value(params.oracle, game, s)
         add_return_sum!(tree, s_idx, leaf_value)
         tree.n_s[s_idx] += 1
@@ -255,6 +310,59 @@ end
 
 function backup_value(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int, sample_value::Float64)
     return style.backup == :mean ? node_return_sum(tree, s_idx) / tree.n_s[s_idx] : sample_value
+end
+
+# Self-play for RegretMatchingSearch with a FittedRegretModel oracle: emits
+# decontaminated regret/strategy targets (like smoos_sim) but with exact,
+# importance-sampling-free regret estimates from the MCTS backup.
+function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth, gae_lambda=0.95)
+    sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
+    A1, A2 = actions(game)
+    γ = discount(game)
+    t = 1
+    rewards = Float64[]
+    values = Float64[]
+    search_time_hist = Float64[]
+    s_hist = Vector{Float32}[]
+    regret_hist = (Vector{Float64}[], Vector{Float64}[])
+    strategy_hist = (Vector{Float64}[], Vector{Float64}[])
+    p = Progress(sim_depth, enabled=progress)
+
+    while (t <= sim_depth) && !isterminal(game, s)
+        search_start = time()
+        (_x, _y, _gv), info = search_info(params, game, s; ϵ)
+        yr, ys = mcts_root_targets(params, info.tree, game, 1)
+        search_time = time() - search_start
+
+        x = eps_exploration(normalized_or_uniform(ys[1]), ϵ)
+        y = eps_exploration(normalized_or_uniform(ys[2]), ϵ)
+        a_idxs = Tuple(action_idx_from_probs(x, y))
+        a = (A1[a_idxs[1]], A2[a_idxs[2]])
+        sp, r = @gen(:sp, :r)(game, s, a)
+        r = zs_reward_scalar(r)
+        push!(search_time_hist, search_time)
+        push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
+        push!(values, oracle_state_value(params.oracle, game, s))
+        push!(rewards, Float64(r))
+        push!(regret_hist[1], Float64.(yr[1]))
+        push!(regret_hist[2], Float64.(yr[2]))
+        push!(strategy_hist[1], Float64.(ys[1]))
+        push!(strategy_hist[2], Float64.(ys[2]))
+        t += 1
+        s = sp
+        next!(p)
+    end
+    bootstrap = isterminal(game, s) ? 0.0 : oracle_state_value(params.oracle, game, s)
+    v_hist = lambda_gae_targets(rewards, values, bootstrap, γ, gae_lambda)
+    finish!(p)
+    return (;
+        s = s_hist,
+        r = rewards,
+        v = v_hist,
+        search_time = search_time_hist,
+        regret = regret_hist,
+        strategy = strategy_hist,
+    )
 end
 
 function mcts_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth)

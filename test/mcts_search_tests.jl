@@ -107,3 +107,65 @@ using Random
     @test isapprox(v_rm_mean, 1.25; atol=0.1)
     @test isapprox(v_rm_mean, rm_mean_info.tree.return_sum[1] / rm_mean_info.tree.n_s[1]; atol=1e-6)
 end
+
+@testset "MCTS regret transfer" begin
+    game = Fixtures.ScalarMatrixGame()
+    transfer_oracle = Fixtures.TableOracle(
+        values=Dict(0f0 => 0f0, 1f0 => 5f0),
+        regrets=Dict(0f0 => (Float32[0.8, -0.2], Float32[-0.1, 0.9])),
+        strategies=Dict(0f0 => (Float32[0.25, 0.75], Float32[0.6, 0.4])),
+    )
+    τ = 1.5
+    tw = 0.25
+
+    # Warm-start injects the (unprojected) prior into the regret/policy_sum
+    # accumulators, mirroring SM-OOS transfer.
+    params = AZ.MCTSSearch(tree_queries=0, max_depth=2, τ=τ, transfer_weight=tw, oracle=transfer_oracle)
+    @test AZ.has_regret_transfer(params)
+    tree = AZ.Tree(params, game, false)
+    AZ.expand_s!(tree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(params, tree, 1, game)
+    regret_mass = sqrt(tw * τ)
+    @test isapprox(tree.regret[1][1], regret_mass .* [0.8, -0.2]; atol=1e-6)
+    @test isapprox(tree.regret[2][1], regret_mass .* [-0.1, 0.9]; atol=1e-6)
+    @test isapprox(tree.policy_sum[1][1], τ .* [0.25, 0.75]; atol=1e-6)
+    @test isapprox(tree.policy_sum[2][1], τ .* [0.6, 0.4]; atol=1e-6)
+
+    # With no search iterations the targets decontaminate to zero regret and
+    # uniform strategy: the oracle never trains on its own prior.
+    yr, ys = AZ.mcts_root_targets(params, tree, game, 1)
+    @test isapprox(yr[1], [0.0, 0.0]; atol=1e-9)
+    @test isapprox(yr[2], [0.0, 0.0]; atol=1e-9)
+    @test isapprox(ys[1], [0.5, 0.5]; atol=1e-6)
+    @test isapprox(ys[2], [0.5, 0.5]; atol=1e-6)
+
+    # Potential-bound projection clamps ||Q⁺||₂ ≤ sqrt(τ|A|)Δ, direction preserved.
+    Δ = 0.1
+    bounded = AZ.MCTSSearch(tree_queries=0, max_depth=2, τ=τ, transfer_weight=tw,
+                            transfer_payoff_bound=Δ, oracle=transfer_oracle)
+    btree = AZ.Tree(bounded, game, false)
+    AZ.expand_s!(btree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(bounded, btree, 1, game)
+    q1 = btree.regret[1][1]
+    pot = sqrt(sum(x -> max(x, 0.0)^2, q1))
+    @test isapprox(pot, sqrt(τ * 2) * Δ; atol=1e-9)
+    @test isapprox(q1[1] / q1[2], 0.8 / -0.2; atol=1e-9)
+
+    # No transfer configured ⇒ accumulators start at zero (original behavior).
+    plain = AZ.MCTSSearch(tree_queries=0, max_depth=2, oracle=transfer_oracle)
+    @test !AZ.has_regret_transfer(plain)
+    ptree = AZ.Tree(plain, game, false)
+    AZ.expand_s!(ptree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(plain, ptree, 1, game)
+    @test all(iszero, ptree.regret[1][1])
+    @test all(iszero, ptree.policy_sum[1][1])
+
+    # End-to-end regret self-play emits regret/strategy targets of correct shape.
+    Random.seed!(3)
+    sim_params = AZ.MCTSSearch(tree_queries=32, max_depth=2, τ=τ, transfer_weight=tw, oracle=transfer_oracle)
+    hist = AZ.mcts_regret_sim(sim_params, game, false; progress=false, ϵ=0.1, gae_lambda=1.0)
+    @test haskey(hist, :regret) && haskey(hist, :strategy)
+    @test length(hist.regret[1]) == length(hist.s) == length(hist.v)
+    @test all(v -> length(v) == 2, hist.regret[1])
+    @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[1][1])), 1.0; atol=1e-6)
+end

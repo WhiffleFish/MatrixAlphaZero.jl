@@ -71,19 +71,23 @@ advance_transfer_tau(τ::Real, oos_iterations::Integer, transfer_weight::Real) =
     Float64(transfer_weight) * (Float64(τ) + Float64(oos_iterations))
 
 initial_search_state(search::SMOOSSearch) = search.τ
-initial_search_state(::MCTSSearch) = nothing
+initial_search_state(search::MCTSSearch) = search.τ
 
 search_callback_state(::SMOOSSearch, state) = (; transfer_tau=state)
-search_callback_state(::MCTSSearch, state) = NamedTuple()
+# Only surface transfer_tau when regret transfer is actually enabled, so plain
+# (ActorCritic / no-transfer) MCTS runs keep their original callback shape.
+search_callback_state(search::MCTSSearch, state) =
+    search.transfer_weight > 0 ? (; transfer_tau=state) : NamedTuple()
 
 with_search_state(search::SMOOSSearch, oracle, state) =
     with_oracle(search, oracle; τ=state)
 with_search_state(search::MCTSSearch, oracle, state) =
-    with_oracle(search, oracle)
+    with_oracle(search, oracle; τ=state)
 
 advance_search_state(search::SMOOSSearch, state) =
     advance_transfer_tau(state, search.oos_iterations, search.transfer_weight)
-advance_search_state(::MCTSSearch, state) = state
+advance_search_state(search::MCTSSearch, state) =
+    advance_transfer_tau(state, search.tree_queries, search.transfer_weight)
 
 run_selfplay(distributed::Bool, progress, game, search::SMOOSSearch, target_steps::Int, s0; ϵ, steps_done::Int, sim_depth::Int, gae_lambda) =
     distributed ?
@@ -92,8 +96,15 @@ run_selfplay(distributed::Bool, progress, game, search::SMOOSSearch, target_step
 
 run_selfplay(distributed::Bool, progress, game, search::MCTSSearch, target_steps::Int, s0; ϵ, steps_done::Int, sim_depth::Int, gae_lambda) =
     distributed ?
-        distributed_mcts(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth) :
-        serial_mcts(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth)
+        distributed_mcts(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth, gae_lambda) :
+        serial_mcts(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth, gae_lambda)
+
+# RegretMatchingSearch backed by a FittedRegretModel emits regret/strategy
+# targets via mcts_regret_sim; the ActorCritic path keeps policy targets.
+mcts_selfplay_sim(search::MCTSSearch, game, s; ϵ, sim_depth, gae_lambda) =
+    search.oracle isa FittedRegretModel ?
+        mcts_regret_sim(search, game, s; ϵ, sim_depth, gae_lambda) :
+        mcts_sim(search, game, s; ϵ, sim_depth)
 
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
     return search_behavior_info(policy.search, policy.game, s)
@@ -186,14 +197,14 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     return AlphaZeroPlanner(game, with_search_state(sol.search, final_oracle, search_state))
 end
 
-function distributed_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth)
+function distributed_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     n_tasks = max(1, Distributed.nworkers())
     while collected < num_steps
         task_count = min(n_tasks, num_steps - collected)
         new_hists = pmap(1:task_count) do _
-            mcts_sim(search, game, rand(s0); ϵ, sim_depth)
+            mcts_selfplay_sim(search, game, rand(s0); ϵ, sim_depth, gae_lambda)
         end
         made_progress = false
         for hist in new_hists
@@ -212,11 +223,11 @@ function distributed_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, s
     return hists
 end
 
-function serial_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth)
+function serial_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth, gae_lambda=0.95)
     hists = NamedTuple[]
     collected = 0
     while collected < num_steps
-        hist = trim_history(mcts_sim(search, game, rand(s0); ϵ, sim_depth), num_steps - collected)
+        hist = trim_history(mcts_selfplay_sim(search, game, rand(s0); ϵ, sim_depth, gae_lambda), num_steps - collected)
         n = length(hist.v)
         iszero(n) && break
         push!(hists, hist)
