@@ -15,7 +15,7 @@ using Random
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
-const EXPERIMENT_NAME = "dubin-2026-06-15"
+const EXPERIMENT_NAME = "dubin-2026-07-02"
 
 args = ExperimentTools.parse_commandline(
     max_steps = 10_000_000,

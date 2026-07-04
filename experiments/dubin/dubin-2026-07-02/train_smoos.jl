@@ -15,7 +15,7 @@ using Random
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
-const EXPERIMENT_NAME = "dubin-2026-06-17"
+const EXPERIMENT_NAME = "dubin-2026-07-02"
 const SEARCH_NAME = "smoos"
 
 args = ExperimentTools.parse_commandline(
@@ -229,9 +229,9 @@ oracle = init_oracle(
     strategy_weight,
 )
 experiment_dir = @__DIR__
-models_dir = joinpath(experiment_dir, "models_smoos")
+models_dir = joinpath(experiment_dir, "models_$(SEARCH_NAME)")
 mkpath(experiment_dir)
-jldsave(joinpath(experiment_dir, "oracle_smoos.jld2"); oracle)
+jldsave(joinpath(experiment_dir, "oracle_$(SEARCH_NAME).jld2"); oracle)
 
 search = AZ.SMOOSSearch(;
     oracle,
