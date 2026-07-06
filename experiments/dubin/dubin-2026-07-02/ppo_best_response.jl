@@ -19,11 +19,25 @@ const DubinTools = ExperimentTools.Dubin
 const EXPERIMENT_DIR = @__DIR__
 const CLEANRL_REV = "fd574765ecd9d34eb48fb475403a2add26fe61c6"
 
+const SEARCH_FAMILIES = Dict(
+    "smoos" => :smoos,
+    "regret_matching" => :regret_matching,
+    "rm_transfer" => :regret_matching,
+)
+
+function search_family(search_name::AbstractString)
+    haskey(SEARCH_FAMILIES, search_name) && return SEARCH_FAMILIES[search_name]
+    error("Unknown --search-name $(search_name); expected one of $(join(keys(SEARCH_FAMILIES), ", "))")
+end
+
 function parse_args(args)
     cfg = Dict{String,String}(
         "targets" => "network,oos_value,oos_transfer",
         "players" => "both",
         "iter" => "latest",
+        "search-name" => "smoos",
+        "backup" => "sample",
+        "value-target" => "search",
         "total-timesteps" => "500000",
         "num-steps" => "128",
         "num-envs" => "4",
@@ -47,7 +61,7 @@ function parse_args(args)
         "transfer-weight" => "0.1",
         "seed" => "20260630",
         "initial-state" => "reference",
-        "output-dir" => joinpath(EXPERIMENT_DIR, "ppo_best_response_results"),
+        "output-dir" => "auto",
         "test" => "false",
     )
     i = 1
@@ -61,10 +75,19 @@ function parse_args(args)
         cfg[opt] = args[i]
         i += 1
     end
+    # Namespace results by search-name by default so different checkpoint
+    # families (e.g. smoos vs rm_transfer) never overwrite each other's summary.
+    output_dir = cfg["output-dir"] == "auto" ?
+        joinpath(EXPERIMENT_DIR, "ppo_best_response_results", cfg["search-name"]) :
+        cfg["output-dir"]
     parsed = (;
         targets = split_nonempty(cfg["targets"]),
         players = parse_players(cfg["players"]),
         iter = cfg["iter"],
+        search_name = cfg["search-name"],
+        search_family = search_family(cfg["search-name"]),
+        backup = Symbol(cfg["backup"]),
+        value_target = Symbol(cfg["value-target"]),
         total_timesteps = parse(Int, cfg["total-timesteps"]),
         num_steps = parse(Int, cfg["num-steps"]),
         num_envs = parse(Int, cfg["num-envs"]),
@@ -88,7 +111,7 @@ function parse_args(args)
         transfer_weight = parse(Float64, cfg["transfer-weight"]),
         seed = parse(Int, cfg["seed"]),
         initial_state = cfg["initial-state"],
-        output_dir = cfg["output-dir"],
+        output_dir = output_dir,
         test = parse(Bool, cfg["test"]),
     )
     return parsed.test ? test_config(parsed) : parsed
@@ -128,8 +151,8 @@ function checkpoint_iteration(path::AbstractString)
     return parse(Int, m.captures[1])
 end
 
-function checkpoint_paths()
-    models_dir = joinpath(EXPERIMENT_DIR, "models_smoos")
+function checkpoint_paths(search_name::AbstractString)
+    models_dir = joinpath(EXPERIMENT_DIR, "models_$(search_name)")
     isdir(models_dir) || error("Missing model checkpoint directory: $(models_dir)")
     checkpoints = filter(p -> occursin(r"oracle\d+\.jld2$", basename(p)), readdir(models_dir; join=true))
     isempty(checkpoints) && error("No oracle checkpoints found in $(models_dir)")
@@ -137,8 +160,8 @@ function checkpoint_paths()
     return checkpoints
 end
 
-function select_checkpoint(iter_spec::AbstractString)
-    checkpoints = checkpoint_paths()
+function select_checkpoint(iter_spec::AbstractString, search_name::AbstractString)
+    checkpoints = checkpoint_paths(search_name)
     iter_spec == "latest" && return last(checkpoints)
     iter = parse(Int, iter_spec)
     matches = filter(p -> checkpoint_iteration(p) == iter, checkpoints)
@@ -146,10 +169,10 @@ function select_checkpoint(iter_spec::AbstractString)
     return only(matches)
 end
 
-function load_checkpoint_oracle(iter_spec::AbstractString)
-    oracle_file = joinpath(EXPERIMENT_DIR, "oracle_smoos.jld2")
+function load_checkpoint_oracle(iter_spec::AbstractString, search_name::AbstractString)
+    oracle_file = joinpath(EXPERIMENT_DIR, "oracle_$(search_name).jld2")
     isfile(oracle_file) || error("Missing oracle architecture file: $(oracle_file)")
-    checkpoint = select_checkpoint(iter_spec)
+    checkpoint = select_checkpoint(iter_spec, search_name)
     oracle = AZ.load_oracle(oracle_file)
     Flux.loadmodel!(oracle, checkpoint)
     return oracle, checkpoint_iteration(checkpoint), checkpoint
@@ -176,29 +199,41 @@ function initialstate_dist(game, spec::AbstractString)
     error("Unknown --initial-state $(spec); expected reference or game")
 end
 
+function build_search(family::Symbol, oracle, cfg; transfer_weight::Real, τ::Real)
+    if family == :smoos
+        return AZ.SMOOSSearch(;
+            oracle,
+            oos_iterations = cfg.tree_queries,
+            max_depth = cfg.max_depth,
+            transfer_weight,
+            τ,
+            ϵ = _ -> cfg.epsilon,
+        )
+    elseif family == :regret_matching
+        return AZ.MCTSSearch(;
+            oracle,
+            tree_queries = cfg.tree_queries,
+            max_depth = cfg.max_depth,
+            search_style = AZ.RegretMatchingSearch(; backup = cfg.backup),
+            value_target = cfg.value_target,
+            transfer_weight,
+            τ,
+            ϵ = _ -> cfg.epsilon,
+        )
+    else
+        error("Unknown search family $(family)")
+    end
+end
+
 function fixed_policy(target::AbstractString, game, oracle, model_iter, cfg)
     if target == "network"
         return Tools.OracleStrategyPolicy(game, oracle), (; transfer_tau = 0.0)
     elseif target == "oos_value"
-        search = AZ.SMOOSSearch(;
-            oracle,
-            oos_iterations = cfg.tree_queries,
-            max_depth = cfg.max_depth,
-            transfer_weight = 0.0,
-            τ = 0.0,
-            ϵ = _ -> cfg.epsilon,
-        )
+        search = build_search(cfg.search_family, oracle, cfg; transfer_weight = 0.0, τ = 0.0)
         return AZ.AlphaZeroPlanner(game, search), (; transfer_tau = 0.0)
     elseif target == "oos_zero"
         zero_oracle = Tools.ZeroSearchOracle(game)
-        search = AZ.SMOOSSearch(;
-            oracle = zero_oracle,
-            oos_iterations = cfg.tree_queries,
-            max_depth = cfg.max_depth,
-            transfer_weight = 0.0,
-            τ = 0.0,
-            ϵ = _ -> cfg.epsilon,
-        )
+        search = build_search(cfg.search_family, zero_oracle, cfg; transfer_weight = 0.0, τ = 0.0)
         return AZ.AlphaZeroPlanner(game, search), (; transfer_tau = 0.0)
     elseif target == "oos_transfer"
         tau = transfer_tau(
@@ -206,14 +241,7 @@ function fixed_policy(target::AbstractString, game, oracle, model_iter, cfg)
             oos_iterations = cfg.train_oos_iterations,
             transfer_weight = cfg.transfer_weight,
         )
-        search = AZ.SMOOSSearch(;
-            oracle,
-            oos_iterations = cfg.tree_queries,
-            max_depth = cfg.max_depth,
-            transfer_weight = cfg.transfer_weight,
-            τ = tau,
-            ϵ = _ -> cfg.epsilon,
-        )
+        search = build_search(cfg.search_family, oracle, cfg; transfer_weight = cfg.transfer_weight, τ = tau)
         return AZ.AlphaZeroPlanner(game, search), (; transfer_tau = tau)
     else
         error("Unknown target $(target)")
@@ -278,6 +306,7 @@ end
 
 function result_row(result)
     return Any[
+        result.search_name,
         result.target,
         result.br_player,
         result.model_iter,
@@ -335,6 +364,7 @@ function run_one(target::String, br_player::Int, game, oracle, model_iter, check
     mkpath(target_dir)
     model_path = joinpath(target_dir, "ppo_br_actor_critic.jld2")
     metadata = Dict(
+        "search_name" => cfg.search_name,
         "target" => target,
         "br_player" => br_player,
         "model_iter" => model_iter,
@@ -362,6 +392,7 @@ function run_one(target::String, br_player::Int, game, oracle, model_iter, check
     )
 
     return (;
+        search_name = cfg.search_name,
         target,
         br_player,
         model_iter,
@@ -390,6 +421,7 @@ end
 
 function write_summary(path, results)
     header = Any[
+        "search_name",
         "target",
         "br_player",
         "model_iter",
@@ -424,7 +456,7 @@ end
 function main(args)
     cfg = parse_args(args)
     game = DubinMG(V = (1.0, 1.0))
-    oracle, model_iter, checkpoint = load_checkpoint_oracle(cfg.iter)
+    oracle, model_iter, checkpoint = load_checkpoint_oracle(cfg.iter, cfg.search_name)
     mkpath(cfg.output_dir)
     println("Loaded checkpoint: $(checkpoint)")
     println("CleanRL fork expected at: https://github.com/WhiffleFish/CleanRL.jl#$(CLEANRL_REV)")
