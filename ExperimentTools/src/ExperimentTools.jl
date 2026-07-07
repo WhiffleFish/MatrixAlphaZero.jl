@@ -43,6 +43,8 @@ export evaluate_joint_policy
 
 include("dubin.jl")
 
+include("tron.jl")
+
 include("argparse.jl")
 
 include("vis.jl")
