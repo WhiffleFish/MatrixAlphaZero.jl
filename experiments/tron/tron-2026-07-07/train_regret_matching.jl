@@ -56,7 +56,6 @@ max_time = Inf
 backup = :sample
 value_target = :search
 value_weight = 1.0f0
-policy_weight = 1.0f0
 critic_type = "scalar"
 
 @everywhere begin
@@ -70,25 +69,16 @@ critic_type = "scalar"
 end
 
 game = TronMG()
-na1, na2 = length.(actions(game))
 s0 = game.initialstate
 # NN input dim from convert_s layout: 8 scalars + two width*height trail bitboards
 n_s = 8 + 2 * game.width * game.height
 
-function init_oracle(n_s, width, na1, na2; value_weight, policy_weight)
+# Value-only oracle: RegretMatchingSearch builds its action distributions from
+# scratch via regret matching over q = r + γV̂, so no actor/policy head is needed.
+function init_oracle(n_s, width; value_weight)
     trunk = Chain(Dense(n_s => width, tanh), Dense(width => width, tanh))
-    actor = AZ.MultiActor(
-        Chain(Dense(width => width, tanh), Dense(width => na1)),
-        Chain(Dense(width => width, tanh), Dense(width => na2)),
-    )
     critic = Chain(Dense(width => width, tanh), Dense(width => 1))
-    return AZ.ActorCritic(
-        trunk,
-        actor,
-        critic;
-        value_weight,
-        policy_weight,
-    )
+    return AZ.CriticOnly(trunk, critic; value_weight)
 end
 
 function add_scalar_metric!(pairs, prefix::AbstractString, name::Symbol, value)
@@ -219,11 +209,8 @@ end
 Random.seed!(0)
 oracle = init_oracle(
     n_s,
-    width,
-    na1,
-    na2;
+    width;
     value_weight,
-    policy_weight,
 )
 experiment_dir = @__DIR__
 models_dir = joinpath(experiment_dir, "models_$(SEARCH_NAME)")
@@ -286,7 +273,6 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "ema_decay" => ema_decay,
             "gae_lambda" => gae_lambda,
             "oracle/value_weight" => oracle.value_weight,
-            "oracle/policy_weight" => oracle.policy_weight,
             "critic_type" => critic_type,
             "epsilon_initial" => epsilon_schedule(1),
             "epsilon_decay" => epsilon_decay,

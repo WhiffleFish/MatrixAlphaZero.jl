@@ -20,7 +20,7 @@ include("callbacks.jl")
 export MetricsCallback
 
 include("nn.jl")
-export FittedRegretModel, ActorCritic, MultiActor, StaticFittedRegretModel, StaticActorCritic
+export FittedRegretModel, ActorCritic, CriticOnly, MultiActor, StaticFittedRegretModel, StaticActorCritic
 
 include("search/search.jl")
 

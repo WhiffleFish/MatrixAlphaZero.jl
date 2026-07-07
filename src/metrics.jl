@@ -45,10 +45,12 @@ function training_metrics(train_stats)
             mean_regret_loss   = Float32(mean(train_stats[:regret_losses])),
             mean_strategy_loss = Float32(mean(train_stats[:strategy_losses])),
         ))
-    else
+    elseif haskey(train_stats, :policy_losses)
         return merge(base, (;
             mean_policy_loss = Float32(mean(train_stats[:policy_losses])),
         ))
+    else
+        return base
     end
 end
 
@@ -64,10 +66,12 @@ function training_minibatch_metrics(train_stats)
             regret_loss   = Float32.(train_stats[:regret_losses]),
             strategy_loss = Float32.(train_stats[:strategy_losses]),
         ))
-    else
+    elseif haskey(train_stats, :policy_losses)
         return merge(base, (;
             policy_loss = Float32.(train_stats[:policy_losses]),
         ))
+    else
+        return base
     end
 end
 

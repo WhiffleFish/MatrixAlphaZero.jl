@@ -100,6 +100,51 @@ function train!(
     return (; losses, value_losses, policy_losses, grad_norms)
 end
 
+function train!(
+        sol,
+        oracle::CriticOnly,
+        batch;
+        update_epochs = sol.update_epochs,
+        num_batches = sol.num_batches,
+        optimiser = sol.optimiser,
+        opt_state = nothing,
+        rng = sol.rng,
+        λ = 1f-2
+    )
+    isnothing(opt_state) && (opt_state = Flux.setup(optimiser, oracle))
+    update_epochs > 0 || throw(ArgumentError("update_epochs must be positive"))
+    num_batches > 0 || throw(ArgumentError("num_batches must be positive"))
+    iszero(length(batch.v)) && throw(ArgumentError("cannot train on an empty batch"))
+    X = reduce(hcat, batch.s)
+    v_target = prepare_target(oracle.critic, Float32.(batch.v))
+    n_samples = size(X, 2)
+    actual_batches = min(num_batches, n_samples)
+
+    losses = Float32[]
+    value_losses = Float32[]
+    grad_norms = Float32[]
+    for _ in 1:update_epochs
+        idxs = randperm(rng, n_samples)
+        for mb_idxs in minibatches(idxs, actual_batches)
+            X_mb = X[:, mb_idxs]
+            v_target_mb = target_minibatch(v_target, mb_idxs)
+            ∇θ = Flux.gradient(oracle) do oracle
+                lv = loss(oracle, X_mb, v_target_mb)
+                l = oracle.value_weight * lv
+                Flux.Zygote.ignore_derivatives() do
+                    push!(losses, l)
+                    push!(value_losses, lv)
+                end
+                return l
+            end
+            gn = sqrt(mapreduce(g -> isnothing(g) ? 0f0 : sum(abs2, g), +, Flux.trainables(∇θ[1]); init=0f0))
+            push!(grad_norms, gn)
+            Flux.update!(opt_state, oracle, ∇θ[1])
+        end
+    end
+    return (; losses, value_losses, grad_norms)
+end
+
 l2_penalty(x::AbstractArray) = sum(abs2, x) / length(x)
 
 function training_arrays(batch::NamedTuple)

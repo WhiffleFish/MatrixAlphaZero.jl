@@ -211,6 +211,22 @@ function simple_actor_critic(;
     )
 end
 
+function simple_critic_only(;
+        input_dim::Int=1,
+        hidden_dim::Int=4,
+        value_weight=1.0f0,
+    )
+    shared = Dense(input_dim => hidden_dim, tanh)
+    critic = Dense(hidden_dim => 1)
+
+    shared.weight .= reshape(Float32.(range(-0.35, 0.35; length=length(shared.weight))), size(shared.weight))
+    shared.bias .= Float32.(range(-0.15, 0.15; length=length(shared.bias)))
+    critic.weight .= reshape(Float32.(range(-0.2, 0.2; length=length(critic.weight))), size(critic.weight))
+    critic.bias .= Float32[0.1]
+
+    return AZ.CriticOnly(shared, critic; value_weight)
+end
+
 function AZ.getloss(critic::Dense, x; value_target)
     ŷ = vec(critic(x))
     return Flux.Losses.huber_loss(ŷ, value_target), Flux.Losses.mse(ŷ, value_target)

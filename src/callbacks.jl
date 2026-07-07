@@ -27,6 +27,8 @@ function (cb::MetricsCallback)(info::NamedTuple)
         println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  regret=$(_r(info.mean_regret_loss))  strategy=$(_r(info.mean_strategy_loss))")
     elseif hasproperty(info, :mean_policy_loss)
         println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))  policy=$(_r(info.mean_policy_loss))")
+    elseif hasproperty(info, :mean_value_loss)
+        println("  loss:        total=$(_r(info.mean_loss))  value=$(_r(info.mean_value_loss))")
     end
     if hasproperty(info, :mean_grad_norm)
         println("  grad norm:   mean=$(_r3(info.mean_grad_norm))  max=$(_r3(info.max_grad_norm))")

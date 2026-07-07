@@ -53,7 +53,7 @@ function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
     Flux.loadmodel!(oracle(planner), JLD2.load(path)["model_state"])
 end
 
-function Flux.loadmodel!(oracle::Union{FittedRegretModel,ActorCritic}, path::String)
+function Flux.loadmodel!(oracle::Union{FittedRegretModel,ActorCritic,CriticOnly}, path::String)
     Flux.loadmodel!(oracle, JLD2.load(path)["model_state"])
 end
 

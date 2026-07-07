@@ -212,6 +212,80 @@ function criticloss(critic, x::AbstractArray, v_target::AbstractArray)
     return Flux.Losses.huber_loss(dropdims(v; dims=1), v_target)
 end
 
+# Value-only oracle: a shared trunk + critic with no actor/regret heads. Used by
+# RegretMatchingSearch runs that build their action distributions from scratch via
+# regret matching over q = r + γV̂ and therefore never consult a learned policy
+# prior for anything but the (unused) zero-visit fallback.
+struct CriticOnly{S,C}
+    shared::S
+    critic::C
+    value_weight::Float32
+end
+
+function CriticOnly(shared, critic; value_weight::Real=1.0f0)
+    return CriticOnly(shared, critic, Float32(value_weight))
+end
+
+CriticOnly(critic; kwargs...) = CriticOnly(identity, critic; kwargs...)
+
+Flux.@layer :expand CriticOnly
+Flux.trainable(model::CriticOnly) = (; shared=model.shared, critic=model.critic)
+
+function (model::CriticOnly)(x)
+    encoded_input = model.shared(x)
+    return (; value = model.critic(encoded_input))
+end
+
+function value(model::CriticOnly, x)
+    encoded_input = model.shared(x)
+    return model.critic(encoded_input)
+end
+
+state_value(model::CriticOnly, game::MG, s) =
+    value(model, convert_s(Vector{Float32}, s, game))
+
+function batch_state_value(model::CriticOnly, game::MG, sv)
+    batch_s = mapreduce(hcat, sv) do s_i
+        convert_s(Vector{Float32}, s_i, game)
+    end
+    return value(model, batch_s)
+end
+
+# No learned policy: expose a uniform prior so RegretMatchingSearch node expansion
+# (which only uses the prior as a zero-visit fallback) still has something to write.
+uniform_prior(game::MG) = map(a -> fill(Float32(inv(length(a))), length(a)), actions(game))
+
+state_policy(model::CriticOnly, game::MG, s) = uniform_prior(game)
+
+function batch_state_policy(model::CriticOnly, game::MG, sv)
+    n = length(sv)
+    return map(actions(game)) do a
+        fill(Float32(inv(length(a))), length(a), n)
+    end
+end
+
+function loss(model::CriticOnly, x, value_target)
+    encoded_input = model.shared(x)
+    return criticloss(model.critic, encoded_input, value_target)
+end
+
+# Value-only diagnostics: the generic oracle_metrics computes policy KL/entropy,
+# which is meaningless without an actor, so report just the value-fit metrics.
+function oracle_metrics(oracle::CriticOnly, prev_oracle, batch::NamedTuple; n_samples::Int=128)
+    batch_size = length(batch.v)
+    iszero(batch_size) && return (; value_pred_mse=NaN32, value_explained_variance=NaN32)
+    n = min(n_samples, batch_size)
+    idxs = rand(1:batch_size, n)
+    X = reduce(hcat, batch.s[idxs])
+    v_target = batch.v[idxs]
+    v_pred = vec(value(oracle, X))
+    v_mse = Float32(mean(abs2, v_pred .- v_target))
+    return (;
+        value_pred_mse = v_mse,
+        value_explained_variance = explained_variance(v_pred, v_target),
+    )
+end
+
 struct MultiActor{T<:Tuple}
     actors::T
     MultiActor(t::T) where T<:Tuple = new{T}(t)
