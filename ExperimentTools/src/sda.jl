@@ -1,3 +1,81 @@
+# --- SNR-SDA heuristics & outcome tracking -------------------------------------
+
+_sda_altitude(x::AbstractVector) = norm(x[idx1t3], 2) - R_EARTH
+
+"""
+    sda_no_burn_heuristic(game, player)
+
+Baseline policy that never burns: it always selects the zero delta-v action, so the
+satellite simply coasts on its current orbit. Works for either player (observer = 1,
+target = 2).
+"""
+function sda_no_burn_heuristic(game::SNRSDAGame, player::Int)
+    A = actions(game)[player]
+    idx = argmin(abs.(A))              # action closest to zero delta-v (no burn)
+    probs = zeros(Float64, length(A))
+    probs[idx] = 1.0
+    return FunctionPlayerPolicy(game, player, (_g, _s) -> probs)
+end
+
+"""
+    sda_no_burn_joint_policy(game)
+
+Joint policy in which both the observer and the target maintain orbit (no burns).
+"""
+function sda_no_burn_joint_policy(game::SNRSDAGame)
+    return JointPolicy(sda_no_burn_heuristic(game, 1), sda_no_burn_heuristic(game, 2))
+end
+
+"""
+    SDAOutcome()
+
+Rollout accumulator for the SNR-SDA game. Tracks, per episode, whether the observer
+ever detected the target (per-step SNR reward above the detection threshold while
+both satellites stayed in bounds), whether the target escaped the altitude bounds,
+and whether the observer left the altitude bounds.
+"""
+mutable struct SDAOutcome
+    detected::Bool
+    target_escaped::Bool
+    observer_lost::Bool
+end
+
+SDAOutcome() = SDAOutcome(false, false, false)
+
+function MarkovGames.reset!(stat::SDAOutcome)
+    stat.detected = false
+    stat.target_escaped = false
+    stat.observer_lost = false
+    return stat
+end
+
+function MarkovGames.observe_step!(stat::SDAOutcome, game::MG, step)
+    r = AZ.zs_reward_scalar(step.r)
+    sp = step.sp
+    lo, hi = game.altitude_bounds
+    observer_oob = !(lo ≤ _sda_altitude(sp.observer) ≤ hi)
+    target_oob = !(lo ≤ _sda_altitude(sp.target) ≤ hi)
+    stat.target_escaped |= target_oob
+    stat.observer_lost |= observer_oob
+    # Reward r ≥ 1 means SNR ≥ the detection threshold; only count it as a detection
+    # when neither satellite is out of bounds (out-of-bounds adds the ±10 terminal
+    # bonus/penalty, which would otherwise masquerade as a detection).
+    if !observer_oob && !target_oob && r ≥ 1
+        stat.detected = true
+    end
+    return stat
+end
+
+function MarkovGames.stat_result(stat::SDAOutcome)
+    return (;
+        detected = stat.detected,
+        target_escaped = stat.target_escaped,
+        observer_lost = stat.observer_lost,
+    )
+end
+
+# --- Oracle value visualization ------------------------------------------------
+
 struct OracleInfo
     obs_x::Vector{Float64}
     obs_y::Vector{Float64}

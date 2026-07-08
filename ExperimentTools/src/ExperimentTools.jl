@@ -56,6 +56,7 @@ export ModelLibrary
 include("simple.jl")
 
 include("sda.jl")
+export SDAOutcome, sda_no_burn_heuristic, sda_no_burn_joint_policy
 
 include("llbr.jl")
 
