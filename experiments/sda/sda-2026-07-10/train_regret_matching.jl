@@ -15,7 +15,7 @@ using Random
 
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
-const EXPERIMENT_NAME = "sda-2026-07-08"
+const EXPERIMENT_NAME = "sda-2026-07-10"
 const SEARCH_NAME = "regret_matching"
 
 args = ExperimentTools.parse_commandline(
@@ -69,13 +69,11 @@ critic_type = "scalar"
     using SDAGames.SatelliteDynamics
 end
 
-# Random LEO/MEO orbits in the equatorial plane for both satellites, matching the
-# established SNR-SDA setup (experiments/sda/sda-2026-02-20/train.jl).
+# Random equatorial orbits for both satellites, using SNRGameSimple's planar
+# osculating elements [a, e, ω, M] (no inclination/RAAN in the 2D model).
 d_observer = ImplicitDistribution() do rng
-    sOSCtoCART([
+    SNRGame.sOSCtoCART2D([
         R_EARTH .+ rand(rng, Distributions.Uniform(500e3, 1e7)),
-        0.0,
-        0.0,
         0.0,
         0.0,
         rand(rng) * 2π,
@@ -83,23 +81,22 @@ d_observer = ImplicitDistribution() do rng
 end
 
 d_target = ImplicitDistribution() do rng
-    sOSCtoCART([
+    SNRGame.sOSCtoCART2D([
         R_EARTH .+ rand(rng, Distributions.Uniform(500e3, 1e7)),
-        0.0,
-        0.0,
         0.0,
         0.0,
         rand(rng) * 2π,
     ])
 end
 
-game = SNRSDAGame(observer = d_observer, target = d_target, altitude_bounds = (100e3, 2e7))
+game = SNRGameSimple(observer = d_observer, target = d_target, altitude_bounds = (100e3, 2e7))
 
 # Value-only oracle: RegretMatchingSearch builds its action distributions from
 # scratch via regret matching over q = r + γV̂, so no actor/policy head is needed.
-# convert_s returns a 25-dim feature vector (observer 6D, target 6D, sun 3D).
+# convert_s returns a 16-dim feature vector (observer 4D, target 4D, relative
+# position/velocity 4D, phase angle sin/cos, visibility flag, normalized SNR).
 function init_oracle(width; value_weight)
-    trunk = Chain(Dense(25 => width, tanh), Dense(width => width, tanh))
+    trunk = Chain(Dense(16 => width, tanh), Dense(width => width, tanh))
     critic = Chain(Dense(width => width, tanh), Dense(width => 1))
     return AZ.CriticOnly(trunk, critic; value_weight)
 end
@@ -113,25 +110,20 @@ end
 
 function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az_player::Int)
     pairs = Pair{Symbol,Any}[]
-    # The SNR-SDA game returns a scalar (zero-sum) reward = the observer's (player 1)
-    # payoff, so the target's reward is its negation.
-    observer_reward = result.reward[1]
-    az_reward = isone(az_player) ? observer_reward : -observer_reward
-
-    add_scalar_metric!(pairs, prefix, :reward, az_reward)
+    add_scalar_metric!(pairs, prefix, :reward, result.reward[az_player])
     add_scalar_metric!(pairs, prefix, :mean_steps, result.mean_steps)
     add_scalar_metric!(pairs, prefix, :detection_rate, result.detected_rate)
     add_scalar_metric!(pairs, prefix, :target_escaped_rate, result.target_escaped_rate)
     add_scalar_metric!(pairs, prefix, :observer_lost_rate, result.observer_lost_rate)
 
     extra_prefix = replace(prefix, "eval/" => "eval_extra/"; count = 1)
-    add_scalar_metric!(pairs, extra_prefix, :stderr_reward, result.stderr_reward[1])
+    add_scalar_metric!(pairs, extra_prefix, :stderr_reward, result.stderr_reward[az_player])
     return (; pairs...)
 end
 
 function print_eval_summary(iter, az_obs_result, az_tar_result)
     az_obs_reward = az_obs_result.reward[1]
-    az_tar_reward = -az_tar_result.reward[1]
+    az_tar_reward = az_tar_result.reward[2]
     println(
         "eval iter $(iter): ",
         "AZ observer reward=$(round(az_obs_reward; digits=3)) ",
@@ -273,7 +265,7 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "experiment" => EXPERIMENT_NAME,
             "search/name" => SEARCH_NAME,
             "search/type" => "MCTSSearch",
-            "game" => "SNRSDAGame",
+            "game" => "SNRGameSimple",
             "search/tree_queries" => search.tree_queries,
             "search/max_depth" => search.max_depth,
             "search/max_time" => search.max_time,
