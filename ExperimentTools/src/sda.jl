@@ -1,15 +1,23 @@
 # --- SNR-SDA heuristics & outcome tracking -------------------------------------
 
-_sda_altitude(x::AbstractVector) = norm(x[idx1t3], 2) - R_EARTH
+# Games with an SDA-style layout: a satellite state vector whose first half is
+# position and second half is velocity (6D `SDAState` for `SNRSDAGame`, 4D
+# `SDAState2D` for `SNRGameSimple`), plus an `altitude_bounds` field.
+const SDAGame = Union{SNRSDAGame, SNRGameSimple}
+
+function _sda_altitude(x::AbstractVector)
+    n = length(x) ÷ 2   # position occupies the first half of the state vector
+    return norm(@view(x[1:n]), 2) - R_EARTH
+end
 
 """
     sda_no_burn_heuristic(game, player)
 
 Baseline policy that never burns: it always selects the zero delta-v action, so the
 satellite simply coasts on its current orbit. Works for either player (observer = 1,
-target = 2).
+target = 2), and for either `SNRSDAGame` or `SNRGameSimple`.
 """
-function sda_no_burn_heuristic(game::SNRSDAGame, player::Int)
+function sda_no_burn_heuristic(game::SDAGame, player::Int)
     A = actions(game)[player]
     idx = argmin(abs.(A))              # action closest to zero delta-v (no burn)
     probs = zeros(Float64, length(A))
@@ -22,7 +30,7 @@ end
 
 Joint policy in which both the observer and the target maintain orbit (no burns).
 """
-function sda_no_burn_joint_policy(game::SNRSDAGame)
+function sda_no_burn_joint_policy(game::SDAGame)
     return JointPolicy(sda_no_burn_heuristic(game, 1), sda_no_burn_heuristic(game, 2))
 end
 
