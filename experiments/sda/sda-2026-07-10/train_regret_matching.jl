@@ -238,6 +238,7 @@ search = AZ.MCTSSearch(;
     max_time,
     ϵ = epsilon_schedule,
     search_style = AZ.RegretMatchingSearch(; backup),
+    optimiser = Flux.Optimisers.Adam(lr),
     value_target,
 )
 
