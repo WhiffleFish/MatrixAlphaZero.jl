@@ -39,6 +39,34 @@ using MarkovGames
     @test AZ.advance_transfer_tau(0.0, 3, 0.5) == 1.5
     @test AZ.advance_transfer_tau(1.5, 3, 0.5) == 2.25
 
+    transfer_config = AZ.LossScaledTransfer(
+        confidence_ema_decay=0.5,
+        loss_tail_fraction=0.5,
+    )
+    confidence_stats = (;
+        regret_losses=Float32[9, 9, 1, 1],
+        strategy_losses=Float32[9, 9, 0.6, 0.6],
+        zero_regret_losses=Float32[9, 9, 2, 2],
+        strategy_entropy_losses=Float32[9, 9, 0.2, 0.2],
+        uniform_strategy_losses=Float32[9, 9, 1.0, 1.0],
+    )
+    q_regret, q_strategy = AZ.transfer_fit_confidence(confidence_stats, transfer_config)
+    @test q_regret ≈ 0.5
+    @test isapprox(q_strategy, 0.5; atol=1e-6)
+    adaptive_search = AZ.SMOOSSearch(
+        oracle=oracle,
+        oos_iterations=4,
+        loss_scaled_transfer=transfer_config,
+    )
+    adaptive_state = AZ.initial_search_state(adaptive_search)
+    adaptive_state = AZ.advance_search_state(adaptive_search, adaptive_state, confidence_stats)
+    @test adaptive_state.source_mass == 4.0
+    @test adaptive_state.regret_confidence ≈ 0.25
+    @test isapprox(adaptive_state.strategy_confidence, 0.25; atol=1e-6)
+    adaptive_callback = AZ.search_callback_state(adaptive_search, adaptive_state)
+    @test adaptive_callback.transfer_source_mass == 4.0
+    @test adaptive_callback.transfer_regret_confidence ≈ 0.25
+
     train_oracle = Fixtures.simple_fitted_regret_model()
     train_search = AZ.SMOOSSearch(; oos_iterations=0, max_depth=3, oracle=train_oracle)
     solver = AZ.AlphaZeroSolver(
@@ -155,6 +183,9 @@ using MarkovGames
     @test length(train_stats.value_losses) == 2
     @test length(train_stats.regret_losses) == 2
     @test length(train_stats.strategy_losses) == 2
+    @test length(train_stats.zero_regret_losses) == 2
+    @test length(train_stats.strategy_entropy_losses) == 2
+    @test length(train_stats.uniform_strategy_losses) == 2
     @test hasproperty(AZ.training_metrics(train_stats), :mean_regret_loss)
     @test hasproperty(AZ.training_minibatch_metrics(train_stats), :strategy_loss)
     @test Flux.state(oracle2) != before

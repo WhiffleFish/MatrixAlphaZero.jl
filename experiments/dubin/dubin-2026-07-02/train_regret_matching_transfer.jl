@@ -16,7 +16,7 @@ const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
 const EXPERIMENT_NAME = "dubin-2026-07-02"
-const SEARCH_NAME = "rm_transfer"
+const SEARCH_NAME = "rm_loss_scaled_transfer"
 
 args = ExperimentTools.parse_commandline(
     max_steps = 10_000_000,
@@ -52,7 +52,8 @@ ema_decay = 0.98f0
 gae_lambda = 0.95
 epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * (epsilon_decay ^ (t - 1)), 0.1)
-transfer_weight = 0.1
+transfer_weight = 0.0
+loss_scaled_transfer = AZ.LossScaledTransfer()
 # Payoff bound Δ for the regret-transfer weight condition. Depth-limited dubin
 # returns are bounded by |r| + γᴰ|V̂| ≲ 2.
 transfer_payoff_bound = 2.0
@@ -150,8 +151,12 @@ function eval_oos_epsilon(info::NamedTuple)
     end
 end
 
-eval_transfer_tau(info::NamedTuple) =
-    hasproperty(info, :transfer_tau) ? info.transfer_tau : 0.0
+eval_transfer_source_mass(info::NamedTuple) =
+    hasproperty(info, :transfer_source_mass) ? info.transfer_source_mass : 0.0
+eval_transfer_regret_confidence(info::NamedTuple) =
+    hasproperty(info, :transfer_regret_confidence) ? info.transfer_regret_confidence : 0.0
+eval_transfer_strategy_confidence(info::NamedTuple) =
+    hasproperty(info, :transfer_strategy_confidence) ? info.transfer_strategy_confidence : 0.0
 
 struct StatRolloutEvalCallback{G,S,W}
     game::G
@@ -198,9 +203,12 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         search_style = AZ.RegretMatchingSearch(; backup),
         value_target,
         ϵ = _ -> eval_oos_epsilon(info),
-        τ = eval_transfer_tau(info),
+        τ = eval_transfer_source_mass(info),
         transfer_weight,
         transfer_payoff_bound,
+        loss_scaled_transfer,
+        regret_confidence = eval_transfer_regret_confidence(info),
+        strategy_confidence = eval_transfer_strategy_confidence(info),
     )
     planner = AZ.AlphaZeroPlanner(cb.game, search)
 
@@ -247,6 +255,7 @@ search = AZ.MCTSSearch(;
     τ = 0.0,
     transfer_weight,
     transfer_payoff_bound,
+    loss_scaled_transfer,
     ϵ = epsilon_schedule,
 )
 
@@ -282,6 +291,11 @@ wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""
             "search/transfer_weight" => search.transfer_weight,
             "search/transfer_payoff_bound" => search.transfer_payoff_bound,
             "search/tau" => search.τ,
+            "search/loss_scaled_transfer/regret_scale" => loss_scaled_transfer.regret_scale,
+            "search/loss_scaled_transfer/strategy_scale" => loss_scaled_transfer.strategy_scale,
+            "search/loss_scaled_transfer/reach_power" => loss_scaled_transfer.reach_power,
+            "search/loss_scaled_transfer/confidence_ema_decay" => loss_scaled_transfer.confidence_ema_decay,
+            "search/loss_scaled_transfer/loss_tail_fraction" => loss_scaled_transfer.loss_tail_fraction,
             "sim_depth" => sim_depth,
             "max_steps" => max_steps,
             "num_steps" => num_steps,

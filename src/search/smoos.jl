@@ -1,6 +1,7 @@
 struct SMOOSTree{S}
     s           :: Vector{S}
     children    :: Vector{Dict{Tuple{Int,Int}, Int}}
+    prior       :: NTuple{2, Vector{Vector{Float64}}}
     regret      :: NTuple{2, Vector{Vector{Float64}}}
     strategy    :: NTuple{2, Vector{Vector{Float64}}}
 end
@@ -9,6 +10,7 @@ function SMOOSTree(game::MG, s=rand(initialstate(game)))
     return SMOOSTree(
         [s],
         [Dict{Tuple{Int,Int}, Int}()],
+        (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
         (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
         (Vector{Float64}[Float64[]], Vector{Float64}[Float64[]]),
     )
@@ -31,24 +33,35 @@ end
 # The exact accumulator initialization injected at node expansion. Kept as a
 # separate function so root_targets can subtract it back out of the training
 # targets: the network must never be trained on its own prior.
-function transfer_prior(params::SMOOSSearch, game::MG, s)
+function transfer_prior(params::SMOOSSearch, game::MG, s, learned_reach::Real=1.0; strategy_prior=nothing)
     A1, A2 = actions(game)
     r̂ = state_regret(params.oracle, game, s)
-    ŝ = state_strategy(params.oracle, game, s)
-    # params.τ is already discounted: τ = wM, so w*sqrt(M) = sqrt(w*τ).
-    regret_mass = sqrt(params.transfer_weight * params.τ)
+    ŝ = isnothing(strategy_prior) ? state_strategy(params.oracle, game, s) : strategy_prior
+    if uses_loss_scaled_transfer(params)
+        regret_pseudo_mass, strategy_pseudo_mass = transfer_pseudo_masses(params, learned_reach)
+        regret_mass = sqrt(regret_pseudo_mass)
+        projection_mass = regret_pseudo_mass
+    else
+        # params.τ is already discounted: τ = wM, so w*sqrt(M) = sqrt(w*τ).
+        regret_mass = sqrt(params.transfer_weight * params.τ)
+        projection_mass = params.τ
+        strategy_pseudo_mass = params.τ
+    end
     Δ = params.transfer_payoff_bound
-    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), params.τ, length(A1), Δ)
-    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), params.τ, length(A2), Δ)
-    s1 = params.τ .* normalized_or_uniform(Float64.(ŝ[1]))
-    s2 = params.τ .* normalized_or_uniform(Float64.(ŝ[2]))
+    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), projection_mass, length(A1), Δ)
+    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), projection_mass, length(A2), Δ)
+    s1 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[2]))
     return (r1, r2), (s1, s2)
 end
 
-function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSSearch)
+function expand_node!(tree::SMOOSTree, h::Int, game::MG, params::SMOOSSearch; learned_reach::Real=1.0)
     isempty(tree.regret[1][h]) || return nothing
     A1, A2 = actions(game)
-    (r1, r2), (s1, s2) = transfer_prior(params, game, tree.s[h])
+    ŝ = state_strategy(params.oracle, game, tree.s[h])
+    tree.prior[1][h] = normalized_or_uniform(Float64.(ŝ[1]))
+    tree.prior[2][h] = normalized_or_uniform(Float64.(ŝ[2]))
+    (r1, r2), (s1, s2) = transfer_prior(params, game, tree.s[h], learned_reach; strategy_prior=ŝ)
     tree.regret[1][h] = r1
     tree.regret[2][h] = r2
     tree.strategy[1][h] = s1
@@ -63,6 +76,8 @@ function child_index!(tree::SMOOSTree, h::Int, a::CartesianIndex{2}, sp)
     return get!(tree.children[h], key) do
         push!(tree.s, sp)
         push!(tree.children, Dict{Tuple{Int,Int}, Int}())
+        push!(tree.prior[1], Float64[])
+        push!(tree.prior[2], Float64[])
         push!(tree.regret[1], Float64[])
         push!(tree.regret[2], Float64[])
         push!(tree.strategy[1], Float64[])
@@ -116,7 +131,8 @@ function smoos_trajectory!(
         x2::Float64,
         q1::Float64,
         q2::Float64;
-        ϵ=0.30
+        ϵ=0.30,
+        learned_reach::Float64=1.0
     )
     s = tree.s[h]
     if isterminal(game, s)
@@ -125,7 +141,7 @@ function smoos_trajectory!(
         return 1.0, 1.0, 1.0, 1.0, oracle_state_value(params.oracle, game, s)
     end
 
-    expand_node!(tree, h, game, params)
+    expand_node!(tree, h, game, params; learned_reach)
     σ1 = regret_matching_policy(tree.regret[1][h])
     σ2 = regret_matching_policy(tree.regret[2][h])
     σ1_sample = eps_exploration(σ1, ϵ)
@@ -138,11 +154,13 @@ function smoos_trajectory!(
     r = zs_reward_scalar(r)
 
     hp = child_index!(tree, h, a, sp)
+    child_learned_reach = learned_reach * tree.prior[1][h][i] * tree.prior[2][h][j]
     tail_x1, tail_x2, tail_q1, tail_q2, tail_value = smoos_trajectory!(
         params, tree, game, hp, depth + 1,
         x1 * σ1[i], x2 * σ2[j],
         q1 * σ1_sample[i], q2 * σ2_sample[j];
-        ϵ
+        ϵ,
+        learned_reach=child_learned_reach,
     )
 
     value = Float64(r) + discount(game) * tail_value

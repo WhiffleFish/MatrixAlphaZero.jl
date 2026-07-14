@@ -31,6 +31,17 @@ using Random
 
     @test AZ.node_matrix_game(tree, 1, 1.0) == game.rewards
     @test_throws MethodError AZ.RegretMatchingSearch(target_policy=:current)
+    @test AZ.RegretMatchingSearch().method isa AZ.Vanilla
+    @test AZ.RegretMatchingSearch(:mean).backup == :mean
+    @test AZ.RegretMatchingSearch(method=AZ.Plus()).method isa AZ.Plus
+
+    vanilla_regret = [-1.0, 0.5]
+    plus_regret = copy(vanilla_regret)
+    delta = [0.25, -1.0]
+    AZ.accumulate_regret!(AZ.Vanilla(), vanilla_regret, delta)
+    AZ.accumulate_regret!(AZ.Plus(), plus_regret, delta)
+    @test vanilla_regret == [-0.75, -0.5]
+    @test plus_regret == [0.0, 0.0]
 
     Random.seed!(7)
     idx = AZ.action_idx_from_probs([0.0, 1.0], [1.0, 0.0])
@@ -106,6 +117,17 @@ using Random
     @test y_rm_mean[1] > 0.9
     @test isapprox(v_rm_mean, 1.25; atol=0.1)
     @test isapprox(v_rm_mean, rm_mean_info.tree.return_sum[1] / rm_mean_info.tree.n_s[1]; atol=1e-6)
+
+    plus_params = AZ.MCTSSearch(
+        tree_queries=500,
+        max_depth=3,
+        max_time=1.0,
+        oracle=step_oracle,
+        search_style=AZ.RegretMatchingSearch(method=AZ.Plus()),
+    )
+    (_, _, _), plus_info = AZ.search_info(plus_params, Fixtures.TwoStepGame(), 0; ϵ=0.1)
+    @test all(all(≥(0.0), regret) for player in plus_info.tree.regret for regret in player)
+    @test all(all(≥(0.0), regret) for player in plus_info.tree.fresh_regret for regret in player)
 end
 
 @testset "MCTS regret transfer" begin
@@ -130,6 +152,21 @@ end
     @test isapprox(tree.regret[2][1], regret_mass .* [-0.1, 0.9]; atol=1e-6)
     @test isapprox(tree.policy_sum[1][1], τ .* [0.25, 0.75]; atol=1e-6)
     @test isapprox(tree.policy_sum[2][1], τ .* [0.6, 0.4]; atol=1e-6)
+
+    plus_params = AZ.MCTSSearch(
+        tree_queries=0,
+        max_depth=2,
+        τ=τ,
+        transfer_weight=tw,
+        oracle=transfer_oracle,
+        search_style=AZ.RegretMatchingSearch(method=AZ.Plus()),
+    )
+    plus_tree = AZ.Tree(plus_params, game, false)
+    AZ.expand_s!(plus_tree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(plus_params, plus_tree, 1, game)
+    @test isapprox(plus_tree.regret[1][1], regret_mass .* [0.8, 0.0]; atol=1e-6)
+    @test isapprox(plus_tree.regret[2][1], regret_mass .* [0.0, 0.9]; atol=1e-6)
+    @test all(iszero, plus_tree.fresh_regret[1][1])
 
     # With no search iterations the targets decontaminate to zero regret and
     # uniform strategy: the oracle never trains on its own prior.
@@ -159,6 +196,32 @@ end
     AZ.warmstart_node!(plain, ptree, 1, game)
     @test all(iszero, ptree.regret[1][1])
     @test all(iszero, ptree.policy_sum[1][1])
+
+    adaptive = AZ.MCTSSearch(
+        tree_queries=4,
+        max_depth=2,
+        τ=10.0,
+        loss_scaled_transfer=AZ.LossScaledTransfer(
+            regret_scale=0.5,
+            strategy_scale=2.0,
+            reach_power=1.0,
+        ),
+        regret_confidence=1.0,
+        strategy_confidence=0.5,
+        oracle=transfer_oracle,
+    )
+    @test AZ.has_regret_transfer(adaptive)
+    @test collect(AZ.transfer_pseudo_masses(adaptive, 1.0)) ≈ [2.0, 4.0]
+    @test collect(AZ.transfer_pseudo_masses(adaptive, 0.25)) ≈ [0.5, 1.0]
+    (adaptive_regret, adaptive_strategy) = AZ.mcts_transfer_prior(adaptive, game, false, 2, 2, 0.25)
+    @test adaptive_regret[1] ≈ sqrt(0.5) .* [0.8, -0.2]
+    @test adaptive_strategy[1] ≈ [0.25, 0.75]
+
+    no_confidence = AZ.with_oracle(adaptive, transfer_oracle;
+        regret_confidence=0.0,
+        strategy_confidence=0.0,
+    )
+    @test !AZ.has_regret_transfer(no_confidence)
 
     # End-to-end regret self-play emits regret/strategy targets of correct shape.
     Random.seed!(3)

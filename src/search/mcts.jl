@@ -8,6 +8,7 @@ struct SearchTree{S}
     r           :: Vector{Matrix{Float64}}
     return_sum  :: Vector{Float64}
     regret      :: NTuple{2, Vector{Vector{Float64}}}
+    fresh_regret:: NTuple{2, Vector{Vector{Float64}}}
     policy_sum  :: NTuple{2, Vector{Vector{Float64}}}
 end
 
@@ -27,6 +28,7 @@ function SearchTree(game::MG, s=rand(initialstate(game)))
         [0.0],
         ([NO_FLOAT], [NO_FLOAT]),
         ([NO_FLOAT], [NO_FLOAT]),
+        ([NO_FLOAT], [NO_FLOAT]),
     )
 end
 
@@ -38,6 +40,8 @@ function reset_search_node!(tree::SearchTree, s_idx::Int, na1::Int, na2::Int)
     tree.return_sum[s_idx] = 0.0
     tree.regret[1][s_idx] = zeros(Float64, na1)
     tree.regret[2][s_idx] = zeros(Float64, na2)
+    tree.fresh_regret[1][s_idx] = zeros(Float64, na1)
+    tree.fresh_regret[2][s_idx] = zeros(Float64, na2)
     tree.policy_sum[1][s_idx] = zeros(Float64, na1)
     tree.policy_sum[2][s_idx] = zeros(Float64, na2)
     return nothing
@@ -46,6 +50,9 @@ end
 function append_search_frontier!(tree::SearchTree, n_frontier::Int)
     append!(tree.return_sum, fill(0.0, n_frontier))
     foreach(tree.regret) do regret_i
+        append!(regret_i, fill(NO_FLOAT, n_frontier))
+    end
+    foreach(tree.fresh_regret) do regret_i
         append!(regret_i, fill(NO_FLOAT, n_frontier))
     end
     foreach(tree.policy_sum) do policy_i
@@ -120,27 +127,50 @@ function oracle_policy(params::MCTSSearch, game::MG, tree::SearchTree, s_idx::In
     return Float64.(x), Float64.(y)
 end
 
-has_regret_transfer(params::MCTSSearch) = params.transfer_weight > 0 && params.τ > 0
+function has_regret_transfer(params::MCTSSearch)
+    if uses_loss_scaled_transfer(params)
+        regret_mass, strategy_mass = transfer_pseudo_masses(params)
+        return regret_mass > 0 || strategy_mass > 0
+    end
+    return params.transfer_weight > 0 && params.τ > 0
+end
 
 # Warm-start init injected into a node's regret/policy_sum accumulators, mirroring
-# SM-OOS `transfer_prior`. The exact-backup regret matching then runs on top of
-# this, and the same init is subtracted back out of the training targets.
-function mcts_transfer_prior(params::MCTSSearch, game::MG, s, na1::Int, na2::Int)
+# SM-OOS `transfer_prior`. RM+ clips the transferred accumulator to its feasible
+# nonnegative state before search begins.
+function mcts_transfer_prior(params::MCTSSearch, game::MG, s, na1::Int, na2::Int, learned_reach::Real=1.0)
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
-    regret_mass = sqrt(params.transfer_weight * params.τ)
+    if uses_loss_scaled_transfer(params)
+        regret_pseudo_mass, strategy_pseudo_mass = transfer_pseudo_masses(params, learned_reach)
+        regret_mass = sqrt(regret_pseudo_mass)
+        projection_mass = regret_pseudo_mass
+    else
+        regret_mass = sqrt(params.transfer_weight * params.τ)
+        projection_mass = params.τ
+        strategy_pseudo_mass = params.τ
+    end
     Δ = params.transfer_payoff_bound
-    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), params.τ, na1, Δ)
-    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), params.τ, na2, Δ)
-    s1 = params.τ .* normalized_or_uniform(Float64.(ŝ[1]))
-    s2 = params.τ .* normalized_or_uniform(Float64.(ŝ[2]))
+    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), projection_mass, na1, Δ)
+    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), projection_mass, na2, Δ)
+    prepare_transfer_regret!(params.search_style.method, r1)
+    prepare_transfer_regret!(params.search_style.method, r2)
+    s1 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[2]))
     return (r1, r2), (s1, s2)
 end
 
-function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game::MG)
+prepare_transfer_regret!(::Vanilla, regret) = regret
+
+function prepare_transfer_regret!(::Plus, regret)
+    regret .= max.(regret, 0.0)
+    return regret
+end
+
+function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game::MG; learned_reach::Real=1.0)
     has_regret_transfer(params) || return nothing
     na1, na2 = size(tree.n_sa[s_idx])
-    (r1, r2), (s1, s2) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2)
+    (r1, r2), (s1, s2) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2, learned_reach)
     tree.regret[1][s_idx] .= r1
     tree.regret[2][s_idx] .= r2
     tree.policy_sum[1][s_idx] .= s1
@@ -148,8 +178,12 @@ function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game:
     return nothing
 end
 
-# Decontaminated regret/strategy training targets at a search node: the injected
-# transfer prior is subtracted so the oracle trains only on fresh search evidence.
+# Vanilla decontaminates regret targets by subtracting its additive prior. RM+
+# uses a shadow accumulator that applies the same fresh updates from zero because
+# its per-update clamp makes subtraction invalid.
+decontaminated_regret(::Vanilla, regret, fresh_regret, prior) = regret .- prior
+decontaminated_regret(::Plus, regret, fresh_regret, prior) = fresh_regret
+
 function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int)
     A1, A2 = actions(game)
     na1, na2 = length(A1), length(A2)
@@ -160,12 +194,21 @@ function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx
         s1i, s2i = zeros(na1), zeros(na2)
     end
     T = tree.n_s[s_idx]
-    strategy_denom = params.τ + T
-    strategy_denom = strategy_denom > 0 ? strategy_denom : 1.0
-    regret_denom = sqrt(strategy_denom)
+    regret_scale_iterations = uses_loss_scaled_transfer(params) ? T : params.τ + T
+    regret_denom = sqrt(max(Float64(regret_scale_iterations), 1.0))
     yr = (
-        (Float64.(tree.regret[1][s_idx]) .- r1i) ./ regret_denom,
-        (Float64.(tree.regret[2][s_idx]) .- r2i) ./ regret_denom,
+        Float64.(decontaminated_regret(
+            params.search_style.method,
+            tree.regret[1][s_idx],
+            tree.fresh_regret[1][s_idx],
+            r1i,
+        )) ./ regret_denom,
+        Float64.(decontaminated_regret(
+            params.search_style.method,
+            tree.regret[2][s_idx],
+            tree.fresh_regret[2][s_idx],
+            r2i,
+        )) ./ regret_denom,
     )
     ys = (
         normalized_or_uniform(max.(Float64.(tree.policy_sum[1][s_idx]) .- s1i, 0.0)),
@@ -198,15 +241,27 @@ function selection_policy(::RegretMatchingSearch, tree::SearchTree, s_idx::Int; 
     return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
 end
 
-function update_node!(::RegretMatchingSearch, tree::SearchTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
+function accumulate_regret!(::Vanilla, regret, delta)
+    regret .+= delta
+    return regret
+end
+
+function accumulate_regret!(::Plus, regret, delta)
+    regret .= max.(regret .+ delta, 0.0)
+    return regret
+end
+
+function update_node!(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
     i, j = Tuple(a)
     q = node_matrix_game(tree, s_idx, γ)
     Δ1 = view(q, :, j) .- total
     Δ1[i] = 0.0
-    tree.regret[1][s_idx] .+= Δ1
+    accumulate_regret!(style.method, tree.regret[1][s_idx], Δ1)
+    accumulate_regret!(style.method, tree.fresh_regret[1][s_idx], Δ1)
     Δ2 = total .- vec(view(q, i, :))
     Δ2[j] = 0.0
-    tree.regret[2][s_idx] .+= Δ2
+    accumulate_regret!(style.method, tree.regret[2][s_idx], Δ2)
+    accumulate_regret!(style.method, tree.fresh_regret[2][s_idx], Δ2)
     tree.policy_sum[1][s_idx] .+= π1
     tree.policy_sum[2][s_idx] .+= π2
     return nothing
@@ -238,13 +293,13 @@ end
 search(params::MCTSSearch, game::MG, s; ϵ=0.30) =
     first(search_info(params, game, s; ϵ))
 
-simulate(params::MCTSSearch, tree::SearchTree, game::MG, s_idx; ϵ=0.30) =
-    simulate(params.search_style, params, tree, game, s_idx, 0; ϵ)
+simulate(params::MCTSSearch, tree::SearchTree, game::MG, s_idx; ϵ=0.30, learned_reach::Float64=1.0) =
+    simulate(params.search_style, params, tree, game, s_idx, 0; ϵ, learned_reach)
 
-simulate(style::RegretMatchingSearch, params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30) =
-    simulate_regret_matching(style, params, tree, game, s_idx, depth; ϵ)
+simulate(style::RegretMatchingSearch, params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30, learned_reach::Float64=1.0) =
+    simulate_regret_matching(style, params, tree, game, s_idx, depth; ϵ, learned_reach)
 
-function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30)
+function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int, depth::Int; ϵ=0.30, learned_reach::Float64=1.0)
     s = tree.s[s_idx]
     if isterminal(game, s)
         return 0.0
@@ -255,7 +310,7 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         return leaf_value
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, params.oracle)
-        warmstart_node!(params, tree, s_idx, game)
+        warmstart_node!(params, tree, s_idx, game; learned_reach)
         leaf_value = oracle_state_value(params.oracle, game, s)
         add_return_sum!(tree, s_idx, leaf_value)
         tree.n_s[s_idx] += 1
@@ -265,7 +320,9 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         π1, π2 = selection_policy(style, tree, s_idx; ϵ)
         a = action_idx_from_probs(π1, π2)
         sp_idx = tree.s_children[s_idx][a]
-        vp = simulate(style, params, tree, game, sp_idx, depth + 1; ϵ)
+        i, j = Tuple(a)
+        child_learned_reach = learned_reach * tree.prior[1][s_idx][i] * tree.prior[2][s_idx][j]
+        vp = simulate(style, params, tree, game, sp_idx, depth + 1; ϵ, learned_reach=child_learned_reach)
         total = tree.r[s_idx][a] + γ * vp
 
         v̂ = tree.v[s_idx][a]

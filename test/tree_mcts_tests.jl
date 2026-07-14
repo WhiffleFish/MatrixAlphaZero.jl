@@ -18,7 +18,7 @@ using Random
         oracle=oracle,
     )
     tree = AZ.Tree(params, game, false)
-    @test fieldnames(typeof(tree)) == (:s, :children, :regret, :strategy)
+    @test fieldnames(typeof(tree)) == (:s, :children, :prior, :regret, :strategy)
     @test !(:n_s in fieldnames(typeof(tree)))
     @test !(:n_sa in fieldnames(typeof(tree)))
 
@@ -29,6 +29,27 @@ using Random
     @test isapprox(tree.regret[2][1], regret_mass .* [-0.1, 0.9]; atol=1e-6)
     @test isapprox(tree.strategy[1][1], retained_mass .* [0.25, 0.75]; atol=1e-6)
     @test isapprox(tree.strategy[2][1], retained_mass .* [0.6, 0.4]; atol=1e-6)
+    @test tree.prior[1][1] ≈ [0.25, 0.75]
+    @test tree.prior[2][1] ≈ [0.6, 0.4]
+
+    adaptive = AZ.SMOOSSearch(
+        oos_iterations=4,
+        τ=10.0,
+        loss_scaled_transfer=AZ.LossScaledTransfer(
+            regret_scale=0.5,
+            strategy_scale=2.0,
+            reach_power=1.0,
+        ),
+        regret_confidence=1.0,
+        strategy_confidence=0.5,
+        max_depth=2,
+        oracle=oracle,
+    )
+    @test collect(AZ.transfer_pseudo_masses(adaptive, 1.0)) ≈ [2.0, 4.0]
+    @test collect(AZ.transfer_pseudo_masses(adaptive, 0.25)) ≈ [0.5, 1.0]
+    (adaptive_regret, adaptive_strategy) = AZ.transfer_prior(adaptive, game, false, 0.25)
+    @test adaptive_regret[1] ≈ sqrt(0.5) .* [0.8, -0.2]
+    @test adaptive_strategy[1] ≈ [0.25, 0.75]
 
     # Targets are decontaminated: with zero search iterations the prior
     # initialization is subtracted back out, leaving no self-distillation.

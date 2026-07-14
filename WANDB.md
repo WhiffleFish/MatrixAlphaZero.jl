@@ -32,7 +32,37 @@ These metrics describe solver progress and are emitted by the core solver.
 | `progress/sim_depth` | Simulation depth used for self-play. | Constant for a run unless the solver config changes. |
 | `progress/samples_added` | Number of samples added by the latest self-play batch. | Not present on the initial callback. |
 | `progress/exploration_epsilon` | Search exploration epsilon for the current update. | Comes from the search epsilon schedule. |
-| `progress/transfer_tau` | Current SM-OOS transfer temperature/state. | SM-OOS only. MCTS/regret-matching runs do not emit this. |
+| `progress/transfer_tau` | Current legacy transfer temperature/state. | Always emitted by legacy SM-OOS transfer and by legacy MCTS transfer when enabled. |
+| `progress/transfer_source_mass` | Cumulative source-search mass available to loss-scaled transfer. | Loss-scaled transfer only. Increases by the per-state search budget after each fit. |
+| `progress/transfer_regret_confidence` | Smoothed regret-fit confidence derived from training loss relative to a zero-regret predictor. | Loss-scaled transfer only; range `[0, 1]`. |
+| `progress/transfer_strategy_confidence` | Smoothed strategy-fit confidence derived from training cross-entropy between target entropy and uniform-predictor loss. | Loss-scaled transfer only; range `[0, 1]`. |
+| `progress/transfer_regret_mass` | Regret pseudo-mass at root reach after the source-mass cap. | Loss-scaled transfer only. Node masses are further reduced by learned-policy reach. |
+| `progress/transfer_strategy_mass` | Strategy pseudo-mass at root reach after the source-mass cap. | Loss-scaled transfer only. Node masses are further reduced by learned-policy reach. |
+
+### Loss-Scaled Transfer
+
+`LossScaledTransfer` is an opt-in alternative to the legacy scalar
+`transfer_weight` recurrence. It uses only the latest fit's training losses; it
+does not run online probes or require a held-out split. The confidence values
+are computed from the configured tail of minibatches and smoothed between
+solver updates.
+
+For source mass `M`, root search budget `B`, learned-policy joint reach `rho`,
+and reach exponent `beta`, node initialization uses separate pseudo-masses:
+
+```text
+m_R = min(M, regret_scale   * regret_confidence   * B * rho^beta)
+m_S = min(M, strategy_scale * strategy_confidence * B * rho^beta)
+R_0 = sqrt(m_R) * predicted_scaled_regret
+S_0 = m_S       * normalized_predicted_strategy
+```
+
+The default scales are conservative: `regret_scale=0.25`,
+`strategy_scale=1.0`, and `reach_power=1.0`. Priors are fixed when a node is
+expanded and are subtracted from learning targets, so later search evidence
+naturally dilutes the warm start without feeding the prediction back as a
+target. `LossScaledTransfer` takes precedence over the legacy transfer formula
+when supplied on `SMOOSSearch` or `MCTSSearch`.
 
 ## Self-Play
 
@@ -164,6 +194,7 @@ SM-OOS config keys:
 | `search/transfer_weight` | Transfer-weight parameter for SM-OOS state updates. |
 | `search/transfer_payoff_bound` | Payoff bound Δ used to project transferred regrets onto the theorem's weight condition (`Inf` disables). |
 | `search/tau` | Initial transfer temperature/state. |
+| `search/loss_scaled_transfer/*` | Optional loss-scaled transfer settings: regret/strategy scale, reach power, confidence EMA decay, and loss-tail fraction. |
 | `oracle/value_weight` | Value-loss weight. |
 | `oracle/regret_weight` | Regret-loss weight. |
 | `oracle/strategy_weight` | Strategy-loss weight. |
@@ -177,6 +208,7 @@ Regret-matching / MCTS config keys:
 | `search/max_time` | MCTS wall-clock time limit. |
 | `search/backup` | MCTS backup style used by `RegretMatchingSearch`. |
 | `search/value_target` | Value target source, such as `search` or `rollout`. |
+| `search/loss_scaled_transfer/*` | Optional loss-scaled transfer settings: regret/strategy scale, reach power, confidence EMA decay, and loss-tail fraction. |
 | `oracle/value_weight` | Value-loss weight. |
 | `oracle/policy_weight` | Policy-loss weight. |
 

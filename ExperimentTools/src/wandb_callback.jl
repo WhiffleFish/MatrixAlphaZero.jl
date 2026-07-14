@@ -70,6 +70,11 @@ const WANDB_PROGRESS_KEYS = Set((
     :samples_added,
     :exploration_epsilon,
     :transfer_tau,
+    :transfer_source_mass,
+    :transfer_regret_confidence,
+    :transfer_strategy_confidence,
+    :transfer_regret_mass,
+    :transfer_strategy_mass,
 ))
 
 function wandb_metric_key(k::Symbol)

@@ -238,7 +238,6 @@ search = AZ.MCTSSearch(;
     max_time,
     ϵ = epsilon_schedule,
     search_style = AZ.RegretMatchingSearch(; backup),
-    optimiser = Flux.Optimisers.Adam(lr),
     value_target,
 )
 
@@ -256,6 +255,7 @@ solver = AZ.AlphaZeroSolver(
     ema = ema,
     ema_decay = ema_decay,
     gae_lambda = gae_lambda,
+    optimiser = Flux.Optimisers.Adam(lr),
 )
 
 wandb_cb = if get(ENV, "WANDB_API_KEY", "") != ""

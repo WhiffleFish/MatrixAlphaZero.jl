@@ -70,24 +70,72 @@ end
 advance_transfer_tau(τ::Real, oos_iterations::Integer, transfer_weight::Real) =
     Float64(transfer_weight) * (Float64(τ) + Float64(oos_iterations))
 
-initial_search_state(search::SMOOSSearch) = search.τ
-initial_search_state(search::MCTSSearch) = search.τ
+struct LossScaledTransferState
+    source_mass        :: Float64
+    regret_confidence  :: Float64
+    strategy_confidence:: Float64
+end
 
-search_callback_state(::SMOOSSearch, state) = (; transfer_tau=state)
+function initial_search_state(search::Union{SMOOSSearch,MCTSSearch})
+    uses_loss_scaled_transfer(search) || return search.τ
+    return LossScaledTransferState(search.τ, search.regret_confidence, search.strategy_confidence)
+end
+
+search_callback_state(::SMOOSSearch, state::Real) = (; transfer_tau=state)
 # Only surface transfer_tau when regret transfer is actually enabled, so plain
 # (ActorCritic / no-transfer) MCTS runs keep their original callback shape.
-search_callback_state(search::MCTSSearch, state) =
+search_callback_state(search::MCTSSearch, state::Real) =
     search.transfer_weight > 0 ? (; transfer_tau=state) : NamedTuple()
 
-with_search_state(search::SMOOSSearch, oracle, state) =
+function search_callback_state(search::Union{SMOOSSearch,MCTSSearch}, state::LossScaledTransferState)
+    active_search = with_search_state(search, search.oracle, state)
+    regret_mass, strategy_mass = transfer_pseudo_masses(active_search)
+    return (;
+        transfer_source_mass=state.source_mass,
+        transfer_regret_confidence=state.regret_confidence,
+        transfer_strategy_confidence=state.strategy_confidence,
+        transfer_regret_mass=regret_mass,
+        transfer_strategy_mass=strategy_mass,
+    )
+end
+
+with_search_state(search::SMOOSSearch, oracle, state::Real) =
     with_oracle(search, oracle; τ=state)
-with_search_state(search::MCTSSearch, oracle, state) =
+with_search_state(search::MCTSSearch, oracle, state::Real) =
     with_oracle(search, oracle; τ=state)
 
-advance_search_state(search::SMOOSSearch, state) =
+function with_search_state(search::Union{SMOOSSearch,MCTSSearch}, oracle, state::LossScaledTransferState)
+    return with_oracle(search, oracle;
+        τ=state.source_mass,
+        regret_confidence=state.regret_confidence,
+        strategy_confidence=state.strategy_confidence,
+    )
+end
+
+advance_search_state(search::SMOOSSearch, state::Real) =
     advance_transfer_tau(state, search.oos_iterations, search.transfer_weight)
-advance_search_state(search::MCTSSearch, state) =
+advance_search_state(search::MCTSSearch, state::Real) =
     advance_transfer_tau(state, search.tree_queries, search.transfer_weight)
+
+advance_search_state(search::Union{SMOOSSearch,MCTSSearch}, state, train_stats) =
+    advance_search_state(search, state)
+
+function advance_search_state(
+        search::Union{SMOOSSearch,MCTSSearch},
+        state::LossScaledTransferState,
+        train_stats,
+    )
+    config = search.loss_scaled_transfer::LossScaledTransfer
+    raw_regret, raw_strategy = transfer_fit_confidence(train_stats, config)
+    decay = config.confidence_ema_decay
+    regret_confidence = decay * state.regret_confidence + (1 - decay) * raw_regret
+    strategy_confidence = decay * state.strategy_confidence + (1 - decay) * raw_strategy
+    return LossScaledTransferState(
+        state.source_mass + search_budget(search),
+        regret_confidence,
+        strategy_confidence,
+    )
+end
 
 run_selfplay(distributed::Bool, progress, game, search::SMOOSSearch, target_steps::Int, s0; ϵ, steps_done::Int, sim_depth::Int, gae_lambda) =
     distributed ?
@@ -141,6 +189,9 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     0 ≤ sol.gae_lambda ≤ 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
     distributed = Distributed.nprocs() > 1
     online_oracle = oracle(sol.search)
+    if uses_loss_scaled_transfer(sol.search) && !(online_oracle isa FittedRegretModel)
+        throw(ArgumentError("LossScaledTransfer requires a FittedRegretModel oracle"))
+    end
     ema_oracle = deepcopy(online_oracle)
     progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
@@ -176,7 +227,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         steps_done += samples_added
         train_stats = train!(sol, online_oracle, batch; opt_state)
         sol.ema && ema_update!(ema_oracle, online_oracle, sol.ema_decay)
-        search_state = advance_search_state(sol.search, search_state)
+        search_state = advance_search_state(sol.search, search_state, train_stats)
         next_learning_rate = learning_rate(sol, update)
         next_learning_rate == active_learning_rate || Flux.Optimisers.adjust!(opt_state; eta=next_learning_rate)
         cb_oracle = sol.ema ? ema_oracle : online_oracle

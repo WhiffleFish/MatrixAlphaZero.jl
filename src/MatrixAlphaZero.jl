@@ -25,7 +25,7 @@ export FittedRegretModel, ActorCritic, CriticOnly, MultiActor, StaticFittedRegre
 include("search/search.jl")
 
 include("solver.jl")
-export AlphaZeroSolver, SMOOSSearch, MCTSSearch, RegretMatchingSearch, AlphaZeroPlanner
+export AlphaZeroSolver, SMOOSSearch, MCTSSearch, RegretMatchingSearch, RegretMatchingMethod, Vanilla, Plus, LossScaledTransfer, AlphaZeroPlanner
 
 include("train.jl")
 export @modeldir, @model
