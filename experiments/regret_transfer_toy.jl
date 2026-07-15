@@ -781,4 +781,4 @@ function main(args)
     return nothing
 end
 
-main(ARGS)
+abspath(PROGRAM_FILE) == abspath(@__FILE__) && main(ARGS)
