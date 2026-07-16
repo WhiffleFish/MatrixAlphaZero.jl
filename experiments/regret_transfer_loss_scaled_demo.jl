@@ -7,7 +7,7 @@ include("regret_transfer_toy.jl")
 
 const DEMO_HORIZON = 3
 const DEMO_SOURCE_UPDATES = 4096
-const DEMO_ONLINE_UPDATES = (4, 8, 16, 32, 500)
+const DEMO_ONLINE_UPDATES = (4, 8, 16, 32, 64, 128, 256, 500)
 const DEMO_FIT_CONDITIONS = (
     (corruption=0.25, confidence=0.75),
     (corruption=0.50, confidence=0.50),

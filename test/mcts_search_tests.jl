@@ -223,7 +223,8 @@ end
     )
     @test !AZ.has_regret_transfer(no_confidence)
 
-    # End-to-end regret self-play emits regret/strategy targets of correct shape.
+    # End-to-end regret self-play emits regret/strategy targets of correct shape
+    # and honors the configured value-supervision source.
     Random.seed!(3)
     sim_params = AZ.MCTSSearch(tree_queries=32, max_depth=2, τ=τ, transfer_weight=tw, oracle=transfer_oracle)
     hist = AZ.mcts_regret_sim(sim_params, game, false; progress=false, ϵ=0.1, gae_lambda=1.0)
@@ -231,4 +232,40 @@ end
     @test length(hist.regret[1]) == length(hist.s) == length(hist.v)
     @test all(v -> length(v) == 2, hist.regret[1])
     @test isapprox(sum(AZ.normalized_or_uniform(hist.strategy[1][1])), 1.0; atol=1e-6)
+
+    Random.seed!(11)
+    (_, _, expected_search_value), _ = AZ.search_info(sim_params, game, false; ϵ=0.1)
+    Random.seed!(11)
+    search_hist = AZ.mcts_regret_sim(
+        sim_params,
+        game,
+        false;
+        progress=false,
+        ϵ=0.1,
+        sim_depth=1,
+        gae_lambda=1.0,
+    )
+    @test only(search_hist.v) ≈ expected_search_value
+
+    gae_params = AZ.with_oracle(sim_params, transfer_oracle; value_target=:gae)
+    Random.seed!(11)
+    gae_hist = AZ.mcts_regret_sim(
+        gae_params,
+        game,
+        false;
+        progress=false,
+        ϵ=0.1,
+        sim_depth=1,
+        gae_lambda=1.0,
+    )
+    @test only(gae_hist.v) ≈ only(gae_hist.r)
+
+    bad_value_params = AZ.with_oracle(sim_params, transfer_oracle; value_target=:rollout)
+    @test_throws ArgumentError AZ.mcts_regret_sim(
+        bad_value_params,
+        game,
+        false;
+        progress=false,
+        ϵ=0.1,
+    )
 end

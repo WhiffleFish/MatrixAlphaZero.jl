@@ -83,6 +83,9 @@ RegretMatchingSearch(backup::Symbol) = RegretMatchingSearch(; backup)
     max_time        :: Float64  = Inf
     search_style    :: RegretMatchingSearch = RegretMatchingSearch()
     oracle          :: Oracle
+    # Value supervision mode. `:search` uses each root search value. Fitted
+    # regret self-play also supports `:gae`, while policy self-play supports
+    # `:rollout` for its bootstrapped environment return.
     value_target    :: Symbol   = :search
     # Regret transfer (RegretMatchingSearch + FittedRegretModel oracle only):
     # warm-start node cumulative regrets from the learned regret prior. Because

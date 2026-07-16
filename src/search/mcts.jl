@@ -374,6 +374,10 @@ end
 # importance-sampling-free regret estimates from the MCTS backup.
 function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth, gae_lambda=0.95)
     sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
+    use_search_targets = params.value_target == :search
+    if !use_search_targets && params.value_target != :gae
+        throw(ArgumentError("Unsupported value_target=$(params.value_target) for fitted-regret MCTS self-play. Use :search or :gae."))
+    end
     A1, A2 = actions(game)
     γ = discount(game)
     t = 1
@@ -387,7 +391,7 @@ function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.3
 
     while (t <= sim_depth) && !isterminal(game, s)
         search_start = time()
-        (_x, _y, _gv), info = search_info(params, game, s; ϵ)
+        (_x, _y, gv), info = search_info(params, game, s; ϵ)
         yr, ys = mcts_root_targets(params, info.tree, game, 1)
         search_time = time() - search_start
 
@@ -399,7 +403,7 @@ function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.3
         r = zs_reward_scalar(r)
         push!(search_time_hist, search_time)
         push!(s_hist, MarkovGames.convert_s(Vector{Float32}, s, game))
-        push!(values, oracle_state_value(params.oracle, game, s))
+        push!(values, use_search_targets ? gv : oracle_state_value(params.oracle, game, s))
         push!(rewards, Float64(r))
         push!(regret_hist[1], Float64.(yr[1]))
         push!(regret_hist[2], Float64.(yr[2]))
@@ -409,8 +413,12 @@ function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.3
         s = sp
         next!(p)
     end
-    bootstrap = isterminal(game, s) ? 0.0 : oracle_state_value(params.oracle, game, s)
-    v_hist = lambda_gae_targets(rewards, values, bootstrap, γ, gae_lambda)
+    v_hist = if use_search_targets
+        values
+    else
+        bootstrap = isterminal(game, s) ? 0.0 : oracle_state_value(params.oracle, game, s)
+        lambda_gae_targets(rewards, values, bootstrap, γ, gae_lambda)
+    end
     finish!(p)
     return (;
         s = s_hist,
