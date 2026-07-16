@@ -34,8 +34,13 @@ if [[ -z "$SUBDIR" ]]; then
   esac
 fi
 
-rsync -avzm "${EXTRA_ARGS[@]}" \
-  --exclude='.CondaPkg/' \
-  --exclude='*.jl' \
-  "${REMOTE_HOST}:${REMOTE_ROOT}/${SUBDIR}" \
-  "${LOCAL_ROOT}/${SUBDIR}"
+RSYNC_ARGS=(-avzm --exclude='.CondaPkg/' --exclude='*.jl')
+if (( ${#EXTRA_ARGS[@]} )); then
+  RSYNC_ARGS+=("${EXTRA_ARGS[@]}")
+fi
+
+# A trailing slash on both paths syncs the directory contents, avoiding a
+# nested <subdir>/<subdir> directory when the local destination already exists.
+rsync "${RSYNC_ARGS[@]}" \
+  "${REMOTE_HOST}:${REMOTE_ROOT}/${SUBDIR%/}/" \
+  "${LOCAL_ROOT}/${SUBDIR%/}/"
