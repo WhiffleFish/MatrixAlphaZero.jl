@@ -411,6 +411,7 @@ solver = AZ.AlphaZeroSolver(
     ema_decay=ema_decay,
     gae_lambda=gae_lambda,
     rng=MersenneTwister(SEED),
+    optimiser = Flux.Optimisers.Adam(lr)
 )
 
 wandb_config = Dict{String,Any}(
