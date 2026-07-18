@@ -62,6 +62,19 @@ using Random
     tree2 = AZ.Tree(params, game, false)
     @test AZ.simulate(params, tree2, game, 1; ϵ=0.0) == 0.0
 
+    # Epsilon changes traversal only. The average-strategy accumulator must
+    # contain the unperturbed regret-matching policy so self-play does not
+    # apply exploration twice or train the strategy head on epsilon noise.
+    exploration_tree = AZ.Tree(params, game, false)
+    AZ.simulate(params, exploration_tree, game, 1; ϵ=1.0) # expand root
+    exploration_tree.regret[1][1] .= [1.0, 0.0]
+    exploration_tree.regret[2][1] .= [0.0, 1.0]
+    @test AZ.current_policy(params.search_style, exploration_tree, 1) == ([1.0, 0.0], [0.0, 1.0])
+    @test AZ.selection_policy(params.search_style, exploration_tree, 1; ϵ=1.0) == ([0.5, 0.5], [0.5, 0.5])
+    AZ.simulate(params, exploration_tree, game, 1; ϵ=1.0)
+    @test exploration_tree.policy_sum[1][1] == [1.0, 0.0]
+    @test exploration_tree.policy_sum[2][1] == [0.0, 1.0]
+
     hist = AZ.mcts_sim(params, game, false; progress=false, ϵ=0.0)
     @test length(hist.s) == 1
     @test only(hist.r) ∈ vec(game.rewards)

@@ -235,9 +235,14 @@ function add_return_sum!(tree::SearchTree, s_idx::Int, value::Float64)
     return tree.return_sum[s_idx]
 end
 
-function selection_policy(::RegretMatchingSearch, tree::SearchTree, s_idx::Int; ϵ=0.30)
+function current_policy(::RegretMatchingSearch, tree::SearchTree, s_idx::Int)
     x = regret_matching_policy(tree.regret[1][s_idx])
     y = regret_matching_policy(tree.regret[2][s_idx])
+    return x, y
+end
+
+function selection_policy(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int; ϵ=0.30)
+    x, y = current_policy(style, tree, s_idx)
     return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
 end
 
@@ -317,8 +322,12 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         return leaf_value
     else
         γ = discount(game)
-        π1, π2 = selection_policy(style, tree, s_idx; ϵ)
-        a = action_idx_from_probs(π1, π2)
+        # Traverse with an exploratory behavior policy, but accumulate the
+        # unperturbed regret-matching policy. Self-play adds epsilon exactly
+        # once when it samples the returned average strategy.
+        σ1, σ2 = current_policy(style, tree, s_idx)
+        μ1, μ2 = eps_exploration(σ1, ϵ), eps_exploration(σ2, ϵ)
+        a = action_idx_from_probs(μ1, μ2)
         sp_idx = tree.s_children[s_idx][a]
         i, j = Tuple(a)
         child_learned_reach = learned_reach * tree.prior[1][s_idx][i] * tree.prior[2][s_idx][j]
@@ -332,7 +341,7 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         tree.n_sa[s_idx][a] += 1
         add_return_sum!(tree, s_idx, total)
 
-        update_node!(style, tree, s_idx, a, total, π1, π2, γ)
+        update_node!(style, tree, s_idx, a, total, σ1, σ2, γ)
         return backup_value(style, tree, s_idx, total)
     end
 end
