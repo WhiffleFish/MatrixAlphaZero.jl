@@ -24,8 +24,8 @@ evaluation so that the experiment directly tests the lessons from Dubin.
   reports full transfer search, a matched value-only search, and the raw learned
   average strategy against the no-burn heuristic. This separates transfer,
   value-oracle, and policy-head quality.
-- The default clipped optimizer (`ClipNorm(0.5) + Adam`) replaces the July-10
-  SDA script's unclipped Adam optimizer.
+- Training uses plain Adam, matching the July-10 SDA script. Gradient norms are
+  logged before the update and were not clipped in `eager-shape-48`.
 - The W&B config records the external SDAGames tree SHA and fixed-bank SNR
   feature quantiles, because the 16th feature is uncapped even though the reward
   is capped.
@@ -56,5 +56,35 @@ evidence about the solver's game-theoretic quality.
 
 The no-burn heuristic is intentionally retained for continuity, but it is a
 narrow opponent. Before making a competitive-policy claim, add at least one
-stronger scripted opponent and run matched zero-value, value-only, and
-full-transfer solver response-utility comparisons on the final checkpoint.
+stronger scripted opponent.
+
+## PPO response utilities
+
+`ppo_solver_response_utilities.jl` trains one PPO response policy for each
+player against the zero-oracle, value-only, and full-transfer solvers. It uses
+the final run confidences by default, SDA's `gamma=0.98`, deployed search with
+`epsilon=0`, and the same PPO horizon used for Dubin (`max_steps=50`). The
+script rejects any request to increase that horizon above 50.
+
+Smoke test all three solvers and both players:
+
+```bash
+julia --project=experiments \
+  experiments/sda/sda-2026-07-18/ppo_solver_response_utilities.jl \
+  --test --output-dir /tmp/sda-ppo-response-smoke
+```
+
+Full run:
+
+```bash
+julia --project=experiments \
+  experiments/sda/sda-2026-07-18/ppo_solver_response_utilities.jl \
+  --total-timesteps 500000 \
+  --eval-runs 500
+```
+
+Outputs are `best_response_utilities.csv`, `response_utility_summary.csv`,
+`failures.csv` when needed, saved PPO models, and TensorBoard event files under
+`ppo_solver_response_utility_results/`. The summed response utility is only an
+empirical lower-bound diagnostic; a negative value means PPO underfit and is
+uninformative.
