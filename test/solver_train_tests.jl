@@ -18,12 +18,10 @@ using MarkovGames
     @test all(all(isapprox.(p, 1.5f0; atol=1e-6)) for p in Flux.trainables(ema_model))
 
     game = Fixtures.ScalarMatrixGame()
-    oracle = Fixtures.TableOracle(values=Dict(1f0 => 0f0))
-    search = AZ.SMOOSSearch(;
-        oracle,
-        oos_iterations=3,
-        τ=2.0,
-        transfer_weight=0.5,
+    train_oracle = Fixtures.simple_fitted_regret_model()
+    search = AZ.MCTSSearch(;
+        oracle=train_oracle,
+        tree_queries=3,
         max_depth=5,
     )
     planner = AZ.AlphaZeroPlanner(game, search)
@@ -31,44 +29,12 @@ using MarkovGames
     @test !hasproperty(planner, :search_params)
     @test !hasproperty(planner, :smoos_params)
     @test !hasproperty(planner, :mcts_params)
-    @test planner.search.oos_iterations == 3
-    @test planner.search.τ == 2.0
-    @test planner.search.transfer_weight == 0.5
+    @test planner.search.tree_queries == 3
+    @test planner.search.prior_scale == 0.0
     @test AZ.with_oracle(search, :new_oracle).oracle == :new_oracle
-    @test AZ.with_oracle(search, :new_oracle; τ=4.0).τ == 4.0
-    @test AZ.advance_transfer_tau(0.0, 3, 0.5) == 1.5
-    @test AZ.advance_transfer_tau(1.5, 3, 0.5) == 2.25
+    @test AZ.with_oracle(search, :new_oracle; prior_scale=4.0).prior_scale == 4.0
 
-    transfer_config = AZ.LossScaledTransfer(
-        confidence_ema_decay=0.5,
-        loss_tail_fraction=0.5,
-    )
-    confidence_stats = (;
-        regret_losses=Float32[9, 9, 1, 1],
-        strategy_losses=Float32[9, 9, 0.6, 0.6],
-        zero_regret_losses=Float32[9, 9, 2, 2],
-        strategy_entropy_losses=Float32[9, 9, 0.2, 0.2],
-        uniform_strategy_losses=Float32[9, 9, 1.0, 1.0],
-    )
-    q_regret, q_strategy = AZ.transfer_fit_confidence(confidence_stats, transfer_config)
-    @test q_regret ≈ 0.5
-    @test isapprox(q_strategy, 0.5; atol=1e-6)
-    adaptive_search = AZ.SMOOSSearch(
-        oracle=oracle,
-        oos_iterations=4,
-        loss_scaled_transfer=transfer_config,
-    )
-    adaptive_state = AZ.initial_search_state(adaptive_search)
-    adaptive_state = AZ.advance_search_state(adaptive_search, adaptive_state, confidence_stats)
-    @test adaptive_state.source_mass == 4.0
-    @test adaptive_state.regret_confidence ≈ 0.25
-    @test isapprox(adaptive_state.strategy_confidence, 0.25; atol=1e-6)
-    adaptive_callback = AZ.search_callback_state(adaptive_search, adaptive_state)
-    @test adaptive_callback.transfer_source_mass == 4.0
-    @test adaptive_callback.transfer_regret_confidence ≈ 0.25
-
-    train_oracle = Fixtures.simple_fitted_regret_model()
-    train_search = AZ.SMOOSSearch(; oos_iterations=0, max_depth=3, oracle=train_oracle)
+    train_search = AZ.MCTSSearch(; tree_queries=2, max_depth=3, oracle=train_oracle)
     solver = AZ.AlphaZeroSolver(
         max_steps=2,
         num_steps=2,
@@ -86,7 +52,7 @@ using MarkovGames
     @test !hasproperty(solver, :value_weight)
     @test !hasproperty(solver, :regret_weight)
     @test !hasproperty(solver, :strategy_weight)
-    @test AZ.AlphaZeroPlanner(solver, game).search.oos_iterations == 0
+    @test AZ.AlphaZeroPlanner(solver, game).search.tree_queries == 2
     @test AZ.AlphaZeroPlanner(game, solver).search.max_depth == 3
     @test solver.sim_depth == 7
     @test solver.ema
@@ -105,8 +71,7 @@ using MarkovGames
     dist, info = MarkovGames.behavior_info(planner, false)
     @test rand(Random.MersenneTwister(1), dist) isa Tuple
     @test hasproperty(info, :tree)
-    @test hasproperty(info, :regret)
-    @test hasproperty(info, :strategy)
+    @test hasproperty(info, :policy)
     @test hasproperty(info, :v)
 
     mktempdir() do dir
@@ -123,7 +88,7 @@ using MarkovGames
 
         planner_target = AZ.AlphaZeroPlanner(
             game,
-            AZ.SMOOSSearch(; oracle=Fixtures.simple_fitted_regret_model(), oos_iterations=0, max_depth=1),
+            AZ.MCTSSearch(; oracle=Fixtures.simple_fitted_regret_model(), tree_queries=0, max_depth=1),
         )
         Flux.loadmodel!(planner_target, state_path)
         @test Flux.state(AZ.oracle(planner_target)) == Flux.state(source)
@@ -183,9 +148,7 @@ using MarkovGames
     @test length(train_stats.value_losses) == 2
     @test length(train_stats.regret_losses) == 2
     @test length(train_stats.strategy_losses) == 2
-    @test length(train_stats.zero_regret_losses) == 2
-    @test length(train_stats.strategy_entropy_losses) == 2
-    @test length(train_stats.uniform_strategy_losses) == 2
+    @test !hasproperty(train_stats, :zero_regret_losses)
     @test hasproperty(AZ.training_metrics(train_stats), :mean_regret_loss)
     @test hasproperty(AZ.training_minibatch_metrics(train_stats), :strategy_loss)
     @test Flux.state(oracle2) != before
@@ -220,24 +183,22 @@ using MarkovGames
     @test AZ.lambda_gae_targets([1.0, 2.0], [0.0, 0.0], 3.0, 0.5, 1.0) ≈ [2.75, 3.5]
 
     progress = Progress(1; enabled=false)
-    smoos_search = AZ.SMOOSSearch(oos_iterations=0, max_depth=2, oracle=Fixtures.simple_fitted_regret_model())
-    serial = AZ.serial_smoos(progress, game, smoos_search, 1, initialstate(game); ϵ=0.0)
+    mcts_search = AZ.MCTSSearch(tree_queries=2, max_depth=2, oracle=Fixtures.simple_fitted_regret_model())
+    serial = AZ.serial_mcts(progress, game, mcts_search, 1, initialstate(game); ϵ=0.0)
     @test length(serial) == 1
 
-    distributed = AZ.distributed_smoos(Progress(1; enabled=false), game, smoos_search, 1, initialstate(game); ϵ=0.0)
+    distributed = AZ.distributed_mcts(Progress(1; enabled=false), game, mcts_search, 1, initialstate(game); ϵ=0.0)
     @test length(distributed) == 1
 
     callback_iters = Int[]
     callback_steps = Int[]
     callback_sim_depths = Int[]
-    callback_transfer_taus = Float64[]
     callback_learning_rates = Float32[]
     callback_has_minibatches = Bool[]
     planner_out = MarkovGames.solve(solver, game; cb=info -> begin
         push!(callback_iters, info.iter)
         hasproperty(info, :steps_done) && push!(callback_steps, info.steps_done)
         hasproperty(info, :sim_depth) && push!(callback_sim_depths, info.sim_depth)
-        hasproperty(info, :transfer_tau) && push!(callback_transfer_taus, info.transfer_tau)
         hasproperty(info, :learning_rate) && push!(callback_learning_rates, info.learning_rate)
         push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
     end)
@@ -246,16 +207,26 @@ using MarkovGames
     @test callback_has_minibatches == [false, true]
     @test callback_iters == [0, 1]
     @test callback_sim_depths == [7, 7]
-    @test callback_transfer_taus == [0.0, 0.0]
     @test callback_learning_rates == [solver.lr, solver.lr]
-    @test planner_out.search isa AZ.SMOOSSearch
+    @test planner_out.search isa AZ.MCTSSearch
+
+    inference_search = AZ.with_oracle(train_search, train_oracle; prior_scale=1.0)
+    inference_solver = AZ.AlphaZeroSolver(
+        max_steps=1,
+        num_steps=1,
+        sim_depth=1,
+        search=inference_search,
+        update_epochs=1,
+        num_batches=1,
+    )
+    @test_throws ArgumentError MarkovGames.solve(inference_solver, game)
 
     no_ema_oracle = Fixtures.simple_fitted_regret_model()
     no_ema_solver = AZ.AlphaZeroSolver(
         max_steps=1,
         num_steps=1,
         sim_depth=1,
-        search=AZ.SMOOSSearch(oos_iterations=0, max_depth=1, oracle=no_ema_oracle),
+        search=AZ.MCTSSearch(tree_queries=2, max_depth=1, oracle=no_ema_oracle),
         update_epochs=1,
         num_batches=1,
         ema=false,

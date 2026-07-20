@@ -32,37 +32,14 @@ These metrics describe solver progress and are emitted by the core solver.
 | `progress/sim_depth` | Simulation depth used for self-play. | Constant for a run unless the solver config changes. |
 | `progress/samples_added` | Number of samples added by the latest self-play batch. | Not present on the initial callback. |
 | `progress/exploration_epsilon` | Search exploration epsilon for the current update. | Comes from the search epsilon schedule. |
-| `progress/transfer_tau` | Current legacy transfer temperature/state. | Always emitted by legacy SM-OOS transfer and by legacy MCTS transfer when enabled. |
-| `progress/transfer_source_mass` | Cumulative source-search mass available to loss-scaled transfer. | Loss-scaled transfer only. Increases by the per-state search budget after each fit. |
-| `progress/transfer_regret_confidence` | Smoothed regret-fit confidence derived from training loss relative to a zero-regret predictor. | Loss-scaled transfer only; range `[0, 1]`. |
-| `progress/transfer_strategy_confidence` | Smoothed strategy-fit confidence derived from training cross-entropy between target entropy and uniform-predictor loss. | Loss-scaled transfer only; range `[0, 1]`. |
-| `progress/transfer_regret_mass` | Regret pseudo-mass at root reach after the source-mass cap. | Loss-scaled transfer only. Node masses are further reduced by learned-policy reach. |
-| `progress/transfer_strategy_mass` | Strategy pseudo-mass at root reach after the source-mass cap. | Loss-scaled transfer only. Node masses are further reduced by learned-policy reach. |
 
-### Loss-Scaled Transfer
-
-`LossScaledTransfer` is an opt-in alternative to the legacy scalar
-`transfer_weight` recurrence. It uses only the latest fit's training losses; it
-does not run online probes or require a held-out split. The confidence values
-are computed from the configured tail of minibatches and smoothed between
-solver updates.
-
-For source mass `M`, root search budget `B`, learned-policy joint reach `rho`,
-and reach exponent `beta`, node initialization uses separate pseudo-masses:
-
-```text
-m_R = min(M, regret_scale   * regret_confidence   * B * rho^beta)
-m_S = min(M, strategy_scale * strategy_confidence * B * rho^beta)
-R_0 = sqrt(m_R) * predicted_scaled_regret
-S_0 = m_S       * normalized_predicted_strategy
-```
-
-The default scales are conservative: `regret_scale=0.25`,
-`strategy_scale=1.0`, and `reach_power=1.0`. Priors are fixed when a node is
-expanded and are subtracted from learning targets, so later search evidence
-naturally dilutes the warm start without feeding the prediction back as a
-target. `LossScaledTransfer` takes precedence over the legacy transfer formula
-when supplied on `SMOOSSearch` or `MCTSSearch`.
+Training has no transfer progress state. An `MCTSSearch` used by
+`AlphaZeroSolver` must have `prior_scale == 0`, so every expanded training node
+starts with zero cumulative regret and zero accumulated strategy. Experiments
+may log a static `inference/prior_scale` config value for evaluation or
+deployment. At inference, both learned priors are initialized with
+`prior_scale * q_prior(h)`, where `q_prior(h)` is the node's joint reach under
+the learned average strategy.
 
 ## Self-Play
 
@@ -90,8 +67,8 @@ These metrics summarize optimizer minibatches from the latest training update.
 | `training_health/learning_rate` | Learning rate used for the current optimizer update after decay and clipping. | All modes. |
 | `training_health/mean_grad_norm` | Mean gradient norm across minibatches. | All modes. |
 | `training_health/max_grad_norm` | Maximum gradient norm across minibatches. | All modes. |
-| `training_health/mean_regret_loss` | Mean regret-head loss. | `FittedRegretModel` / SM-OOS. |
-| `training_health/mean_strategy_loss` | Mean strategy-head loss. | `FittedRegretModel` / SM-OOS. |
+| `training_health/mean_regret_loss` | Mean regret-head loss. | `FittedRegretModel` / regret-matching MCTS. |
+| `training_health/mean_strategy_loss` | Mean strategy-head loss. | `FittedRegretModel` / regret-matching MCTS. |
 | `training_health/mean_policy_loss` | Mean actor policy loss. | `ActorCritic` / MCTS regret-matching. |
 
 The solver still constructs `minibatch_metrics` for local callbacks, but
@@ -115,8 +92,8 @@ statistics.
 | `oracle_quality/policy_kl_p2` | KL divergence from current player 2 policy to previous callback player 2 policy. | All modes. |
 | `oracle_quality/target_policy_kl_p1` | KL divergence from current player 1 policy to sampled player 1 target policy/strategy. | All modes. |
 | `oracle_quality/target_policy_kl_p2` | KL divergence from current player 2 policy to sampled player 2 target policy/strategy. | All modes. |
-| `oracle_quality/target_regret_l2` | Average L2 norm of sampled regret targets. | `FittedRegretModel` / SM-OOS. |
-| `oracle_quality/regret_pred_mse` | Mean squared error between predicted regrets and sampled regret targets. | `FittedRegretModel` / SM-OOS. |
+| `oracle_quality/target_regret_l2` | Average L2 norm of sampled regret targets. | `FittedRegretModel` / regret-matching MCTS. |
+| `oracle_quality/regret_pred_mse` | Mean squared error between predicted regrets and sampled regret targets. | `FittedRegretModel` / regret-matching MCTS. |
 
 The W&B key whitelist also contains older `strategy_*` names, but the current
 `oracle_metrics` implementation emits the `policy_*` names above for both
@@ -163,8 +140,8 @@ Dubin scripts log the following common config keys:
 | Config key | Meaning |
 |---|---|
 | `experiment` | Experiment directory/name, for example `dubin-2026-06-15`. |
-| `search/name` | Search variant name, for example `smoos` or `regret_matching`. |
-| `search/type` | Search type, for example `SMOOSSearch` or `MCTSSearch`. |
+| `search/name` | Search variant name, for example `rm_plus_no_transfer_train`. |
+| `search/type` | Search type, currently `MCTSSearch`. |
 | `game` | Game identifier, currently `DubinMG`. |
 | `sim_depth` | Self-play simulation depth. |
 | `max_steps` | Solver target sample budget. |
@@ -178,28 +155,14 @@ Dubin scripts log the following common config keys:
 | `lr_max` | Upper bound applied to the decayed learning rate. |
 | `ema` | Whether callback/final oracle uses EMA weights. |
 | `ema_decay` | EMA decay factor. |
-| `gae_lambda` | GAE lambda for SM-OOS target construction. |
+| `gae_lambda` | GAE lambda when fitted-regret MCTS uses `value_target=:gae`. |
 | `critic_type` | Critic target/output type selected by the experiment script. |
 | `epsilon_initial` | Initial exploration epsilon from the schedule. |
 | `epsilon_decay` | Epsilon decay factor. |
 | `eval_runs` | Number of heuristic eval rollouts per matchup. |
 | `eval_every` | Solver iteration interval for heuristic eval logging. |
 
-SM-OOS config keys:
-
-| Config key | Meaning |
-|---|---|
-| `search/oos_iterations` | Number of OOS iterations per search. |
-| `search/max_depth` | Search depth limit. |
-| `search/transfer_weight` | Transfer-weight parameter for SM-OOS state updates. |
-| `search/transfer_payoff_bound` | Payoff bound Δ used to project transferred regrets onto the theorem's weight condition (`Inf` disables). |
-| `search/tau` | Initial transfer temperature/state. |
-| `search/loss_scaled_transfer/*` | Optional loss-scaled transfer settings: regret/strategy scale, reach power, confidence EMA decay, and loss-tail fraction. |
-| `oracle/value_weight` | Value-loss weight. |
-| `oracle/regret_weight` | Regret-loss weight. |
-| `oracle/strategy_weight` | Strategy-loss weight. |
-
-Regret-matching / MCTS config keys:
+Regret-matching MCTS config keys:
 
 | Config key | Meaning |
 |---|---|
@@ -207,13 +170,14 @@ Regret-matching / MCTS config keys:
 | `search/max_depth` | Search depth limit. |
 | `search/max_time` | MCTS wall-clock time limit. |
 | `search/backup` | MCTS backup style used by `RegretMatchingSearch`. |
+| `search/method` | Regret-matching update, such as `plus`. |
 | `search/value_target` | Value target source, such as `search` or `rollout`. |
-| `search/loss_scaled_transfer/*` | Optional loss-scaled transfer settings: regret/strategy scale, reach power, confidence EMA decay, and loss-tail fraction. |
+| `search/training_prior_scale` | Fitted-prior scale used during training; required to be zero. |
+| `inference/prior_scale` | Single regret/average-strategy prior scale used by evaluation and deployment. |
 | `oracle/value_weight` | Value-loss weight. |
-| `oracle/policy_weight` | Policy-loss weight. |
-
-The older `experiments/dubin/dubin-2026-06-15/train.jl` script logs the SM-OOS
-style config but does not include `search/name` or `search/type`.
+| `oracle/regret_weight` | Average-regret loss weight for fitted-regret models. |
+| `oracle/strategy_weight` | Average-strategy loss weight for fitted-regret models. |
+| `oracle/policy_weight` | Policy-loss weight for actor-critic models. |
 
 ## Practical Notes
 

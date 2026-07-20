@@ -9,6 +9,7 @@ function parse_commandline(;
         runs            = nothing,
         checkpoint      = nothing,
         every           = nothing,
+        prior_scale     = nothing,
     )
     s = ArgParseSettings()
 
@@ -69,6 +70,14 @@ function parse_commandline(;
             "--every"
                 arg_type = Int
                 default = every
+        end
+    end
+
+    if !isnothing(prior_scale)
+        @add_arg_table! s begin
+            "--prior_scale"
+                arg_type = Float64
+                default = prior_scale
         end
     end
 

@@ -29,10 +29,8 @@ using Random
     @test !hasproperty(solver, :smoos_params)
     @test !hasproperty(solver, :mcts_params)
     @test !hasproperty(solver, :transfer_weight)
-    # MCTSSearch now supports regret transfer, but defaults to disabled so plain
-    # (ActorCritic, tree-search-only) runs are unaffected.
-    @test solver.search.transfer_weight == 0.0
-    @test !AZ.has_regret_transfer(solver.search)
+    @test solver.search.prior_scale == 0.0
+    @test !AZ.has_prior_transfer(solver.search)
     @test AZ.AlphaZeroPlanner(solver, game).search isa AZ.MCTSSearch
     @test AZ.AlphaZeroPlanner(game, solver).search.max_depth == 2
 
@@ -77,13 +75,10 @@ using Random
     @test isfinite(oracle_stats.value_pred_mse)
     @test hasproperty(oracle_stats, :value_explained_variance)
 
-    callback_has_transfer_tau = Bool[]
     callback_has_minibatches = Bool[]
     planner_out = MarkovGames.solve(solver, game; cb=info -> begin
-        push!(callback_has_transfer_tau, hasproperty(info, :transfer_tau))
         push!(callback_has_minibatches, hasproperty(info, :minibatch_metrics))
     end)
     @test planner_out.search isa AZ.MCTSSearch
-    @test callback_has_transfer_tau == [false, false]
     @test callback_has_minibatches == [false, true]
 end

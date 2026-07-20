@@ -24,9 +24,6 @@ function train!(
     value_losses = Float32[]
     regret_losses = Float32[]
     strategy_losses = Float32[]
-    zero_regret_losses = Float32[]
-    strategy_entropy_losses = Float32[]
-    uniform_strategy_losses = Float32[]
     grad_norms = Float32[]
     for _ in 1:update_epochs
         idxs = randperm(rng, n_samples)
@@ -35,10 +32,6 @@ function train!(
             v_target_mb = target_minibatch(v_target, mb_idxs)
             r_target_mb = map(r -> r[:, mb_idxs], r_target)
             s_target_mb = map(s -> s[:, mb_idxs], s_target)
-            push!(zero_regret_losses, Float32(zero_regret_loss(r_target_mb)))
-            entropy_loss, uniform_loss = strategy_target_baseline_losses(s_target_mb)
-            push!(strategy_entropy_losses, Float32(entropy_loss))
-            push!(uniform_strategy_losses, Float32(uniform_loss))
             ∇θ = Flux.gradient(oracle) do oracle
                 lv, lr, ls = loss(oracle, X_mb, v_target_mb, r_target_mb, s_target_mb)
                 l = oracle.value_weight * lv + oracle.regret_weight * lr + oracle.strategy_weight * ls
@@ -60,9 +53,6 @@ function train!(
         value_losses,
         regret_losses,
         strategy_losses,
-        zero_regret_losses,
-        strategy_entropy_losses,
-        uniform_strategy_losses,
         grad_norms,
     )
 end
@@ -162,49 +152,6 @@ function train!(
 end
 
 l2_penalty(x::AbstractArray) = sum(abs2, x) / length(x)
-
-zero_regret_loss(r_target) = mapreduce(+, r_target) do target
-    Flux.Losses.huber_loss(zeros(eltype(target), size(target)), target)
-end
-
-function strategy_target_baseline_losses(s_target)
-    entropy_loss = mapreduce(+, s_target) do target
-        safe_target = max.(target, eps(eltype(target)))
-        Float32(-mean(vec(sum(target .* log.(safe_target); dims=1))))
-    end
-    uniform_loss = mapreduce(target -> log(Float32(size(target, 1))), +, s_target)
-    return entropy_loss, uniform_loss
-end
-
-function tail_mean(values, fraction::Real)
-    isempty(values) && return NaN
-    count = max(1, ceil(Int, length(values) * fraction))
-    return mean(@view values[(end - count + 1):end])
-end
-
-function transfer_fit_confidence(train_stats, config::LossScaledTransfer)
-    required = (
-        :regret_losses,
-        :strategy_losses,
-        :zero_regret_losses,
-        :strategy_entropy_losses,
-        :uniform_strategy_losses,
-    )
-    all(k -> haskey(train_stats, k), required) || return 0.0, 0.0
-    fraction = config.loss_tail_fraction
-
-    regret_loss = tail_mean(train_stats.regret_losses, fraction)
-    zero_loss = tail_mean(train_stats.zero_regret_losses, fraction)
-    regret_confidence = zero_loss > eps(Float32) ? clamp(1 - regret_loss / zero_loss, 0.0, 1.0) : 0.0
-
-    strategy_loss = tail_mean(train_stats.strategy_losses, fraction)
-    entropy_loss = tail_mean(train_stats.strategy_entropy_losses, fraction)
-    uniform_loss = tail_mean(train_stats.uniform_strategy_losses, fraction)
-    model_excess = max(strategy_loss - entropy_loss, 0.0)
-    uniform_excess = max(uniform_loss - entropy_loss, 0.0)
-    strategy_confidence = uniform_excess > eps(Float32) ? clamp(1 - model_excess / uniform_excess, 0.0, 1.0) : 0.0
-    return Float64(regret_confidence), Float64(strategy_confidence)
-end
 
 function training_arrays(batch::NamedTuple)
     n_samples = length(batch.v)

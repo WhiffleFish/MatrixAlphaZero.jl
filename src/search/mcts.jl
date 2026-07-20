@@ -127,36 +127,24 @@ function oracle_policy(params::MCTSSearch, game::MG, tree::SearchTree, s_idx::In
     return Float64.(x), Float64.(y)
 end
 
-function has_regret_transfer(params::MCTSSearch)
-    if uses_loss_scaled_transfer(params)
-        regret_mass, strategy_mass = transfer_pseudo_masses(params)
-        return regret_mass > 0 || strategy_mass > 0
-    end
-    return params.transfer_weight > 0 && params.τ > 0
+function has_prior_transfer(params::MCTSSearch)
+    params.prior_scale >= 0 || throw(ArgumentError("prior_scale must be nonnegative"))
+    return params.prior_scale > 0
 end
 
-# Warm-start init injected into a node's regret/policy_sum accumulators, mirroring
-# SM-OOS `transfer_prior`. RM+ clips the transferred accumulator to its feasible
-# nonnegative state before search begins.
-function mcts_transfer_prior(params::MCTSSearch, game::MG, s, na1::Int, na2::Int, learned_reach::Real=1.0)
+# Inference warm start. The single scale has the wT₁ semantics from the fitted
+# transfer theory and is attenuated by the joint reach under the learned average
+# policy. RM+ clips negative fitted cumulative regrets before local updates.
+function mcts_prior(params::MCTSSearch, game::MG, s, learned_reach::Real=1.0)
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
-    if uses_loss_scaled_transfer(params)
-        regret_pseudo_mass, strategy_pseudo_mass = transfer_pseudo_masses(params, learned_reach)
-        regret_mass = sqrt(regret_pseudo_mass)
-        projection_mass = regret_pseudo_mass
-    else
-        regret_mass = sqrt(params.transfer_weight * params.τ)
-        projection_mass = params.τ
-        strategy_pseudo_mass = params.τ
-    end
-    Δ = params.transfer_payoff_bound
-    r1 = project_transfer_regret!(regret_mass .* Float64.(r̂[1]), projection_mass, na1, Δ)
-    r2 = project_transfer_regret!(regret_mass .* Float64.(r̂[2]), projection_mass, na2, Δ)
+    effective_scale = params.prior_scale * clamp(Float64(learned_reach), 0.0, 1.0)
+    r1 = effective_scale .* Float64.(r̂[1])
+    r2 = effective_scale .* Float64.(r̂[2])
     prepare_transfer_regret!(params.search_style.method, r1)
     prepare_transfer_regret!(params.search_style.method, r2)
-    s1 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[1]))
-    s2 = strategy_pseudo_mass .* normalized_or_uniform(Float64.(ŝ[2]))
+    s1 = effective_scale .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = effective_scale .* normalized_or_uniform(Float64.(ŝ[2]))
     return (r1, r2), (s1, s2)
 end
 
@@ -168,9 +156,8 @@ function prepare_transfer_regret!(::Plus, regret)
 end
 
 function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game::MG; learned_reach::Real=1.0)
-    has_regret_transfer(params) || return nothing
-    na1, na2 = size(tree.n_sa[s_idx])
-    (r1, r2), (s1, s2) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2, learned_reach)
+    has_prior_transfer(params) || return nothing
+    (r1, r2), (s1, s2) = mcts_prior(params, game, tree.s[s_idx], learned_reach)
     tree.regret[1][s_idx] .= r1
     tree.regret[2][s_idx] .= r2
     tree.policy_sum[1][s_idx] .= s1
@@ -178,37 +165,22 @@ function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game:
     return nothing
 end
 
-# Vanilla decontaminates regret targets by subtracting its additive prior. RM+
-# uses a shadow accumulator that applies the same fresh updates from zero because
-# its per-update clamp makes subtraction invalid.
-decontaminated_regret(::Vanilla, regret, fresh_regret, prior) = regret .- prior
-decontaminated_regret(::Plus, regret, fresh_regret, prior) = fresh_regret
-
 function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int)
     A1, A2 = actions(game)
     na1, na2 = length(A1), length(A2)
-    if has_regret_transfer(params)
-        (r1i, r2i), (s1i, s2i) = mcts_transfer_prior(params, game, tree.s[s_idx], na1, na2)
+    if has_prior_transfer(params)
+        (_r1i, _r2i), (s1i, s2i) = mcts_prior(params, game, tree.s[s_idx])
     else
-        r1i, r2i = zeros(na1), zeros(na2)
         s1i, s2i = zeros(na1), zeros(na2)
     end
-    T = tree.n_s[s_idx]
-    regret_scale_iterations = uses_loss_scaled_transfer(params) ? T : params.τ + T
-    regret_denom = sqrt(max(Float64(regret_scale_iterations), 1.0))
+    local_iterations = sum(tree.n_sa[s_idx])
+    # Fit average regret so the inference prior has the paper's direct
+    # cumulative initialization: prior_scale * R_bar. The first query expands
+    # a node without an RM update, so n_s is not the iteration count here.
+    regret_denom = max(Float64(local_iterations), 1.0)
     yr = (
-        Float64.(decontaminated_regret(
-            params.search_style.method,
-            tree.regret[1][s_idx],
-            tree.fresh_regret[1][s_idx],
-            r1i,
-        )) ./ regret_denom,
-        Float64.(decontaminated_regret(
-            params.search_style.method,
-            tree.regret[2][s_idx],
-            tree.fresh_regret[2][s_idx],
-            r2i,
-        )) ./ regret_denom,
+        Float64.(tree.fresh_regret[1][s_idx]) ./ regret_denom,
+        Float64.(tree.fresh_regret[2][s_idx]) ./ regret_denom,
     )
     ys = (
         normalized_or_uniform(max.(Float64.(tree.policy_sum[1][s_idx]) .- s1i, 0.0)),
@@ -378,9 +350,8 @@ function backup_value(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int,
     return style.backup == :mean ? node_return_sum(tree, s_idx) / tree.n_s[s_idx] : sample_value
 end
 
-# Self-play for RegretMatchingSearch with a FittedRegretModel oracle: emits
-# decontaminated regret/strategy targets (like smoos_sim) but with exact,
-# importance-sampling-free regret estimates from the MCTS backup.
+# Self-play for RegretMatchingSearch with a FittedRegretModel oracle. Training
+# uses prior_scale=0, so these are ordinary local RM regret/strategy targets.
 function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth, gae_lambda=0.95)
     sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
     use_search_targets = params.value_target == :search

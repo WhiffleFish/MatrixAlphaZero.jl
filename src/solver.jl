@@ -46,7 +46,7 @@ AlphaZeroPlanner(game::MG, sol::AlphaZeroSolver) =
 AlphaZeroPlanner(planner::AlphaZeroPlanner; search=planner.search) =
     AlphaZeroPlanner(planner.game, search)
 
-oracle(search::Union{SMOOSSearch,MCTSSearch}) = search.oracle
+oracle(search::MCTSSearch) = search.oracle
 oracle(planner::AlphaZeroPlanner) = oracle(planner.search)
 
 function Flux.loadmodel!(planner::AlphaZeroPlanner, path::String)
@@ -67,81 +67,6 @@ function load_oracle(path)
     end
 end
 
-advance_transfer_tau(τ::Real, oos_iterations::Integer, transfer_weight::Real) =
-    Float64(transfer_weight) * (Float64(τ) + Float64(oos_iterations))
-
-struct LossScaledTransferState
-    source_mass        :: Float64
-    regret_confidence  :: Float64
-    strategy_confidence:: Float64
-end
-
-function initial_search_state(search::Union{SMOOSSearch,MCTSSearch})
-    uses_loss_scaled_transfer(search) || return search.τ
-    return LossScaledTransferState(search.τ, search.regret_confidence, search.strategy_confidence)
-end
-
-search_callback_state(::SMOOSSearch, state::Real) = (; transfer_tau=state)
-# Only surface transfer_tau when regret transfer is actually enabled, so plain
-# (ActorCritic / no-transfer) MCTS runs keep their original callback shape.
-search_callback_state(search::MCTSSearch, state::Real) =
-    search.transfer_weight > 0 ? (; transfer_tau=state) : NamedTuple()
-
-function search_callback_state(search::Union{SMOOSSearch,MCTSSearch}, state::LossScaledTransferState)
-    active_search = with_search_state(search, search.oracle, state)
-    regret_mass, strategy_mass = transfer_pseudo_masses(active_search)
-    return (;
-        transfer_source_mass=state.source_mass,
-        transfer_regret_confidence=state.regret_confidence,
-        transfer_strategy_confidence=state.strategy_confidence,
-        transfer_regret_mass=regret_mass,
-        transfer_strategy_mass=strategy_mass,
-    )
-end
-
-with_search_state(search::SMOOSSearch, oracle, state::Real) =
-    with_oracle(search, oracle; τ=state)
-with_search_state(search::MCTSSearch, oracle, state::Real) =
-    with_oracle(search, oracle; τ=state)
-
-function with_search_state(search::Union{SMOOSSearch,MCTSSearch}, oracle, state::LossScaledTransferState)
-    return with_oracle(search, oracle;
-        τ=state.source_mass,
-        regret_confidence=state.regret_confidence,
-        strategy_confidence=state.strategy_confidence,
-    )
-end
-
-advance_search_state(search::SMOOSSearch, state::Real) =
-    advance_transfer_tau(state, search.oos_iterations, search.transfer_weight)
-advance_search_state(search::MCTSSearch, state::Real) =
-    advance_transfer_tau(state, search.tree_queries, search.transfer_weight)
-
-advance_search_state(search::Union{SMOOSSearch,MCTSSearch}, state, train_stats) =
-    advance_search_state(search, state)
-
-function advance_search_state(
-        search::Union{SMOOSSearch,MCTSSearch},
-        state::LossScaledTransferState,
-        train_stats,
-    )
-    config = search.loss_scaled_transfer::LossScaledTransfer
-    raw_regret, raw_strategy = transfer_fit_confidence(train_stats, config)
-    decay = config.confidence_ema_decay
-    regret_confidence = decay * state.regret_confidence + (1 - decay) * raw_regret
-    strategy_confidence = decay * state.strategy_confidence + (1 - decay) * raw_strategy
-    return LossScaledTransferState(
-        state.source_mass + search_budget(search),
-        regret_confidence,
-        strategy_confidence,
-    )
-end
-
-run_selfplay(distributed::Bool, progress, game, search::SMOOSSearch, target_steps::Int, s0; ϵ, steps_done::Int, sim_depth::Int, gae_lambda) =
-    distributed ?
-        distributed_smoos(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth, gae_lambda) :
-        serial_smoos(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth, gae_lambda)
-
 run_selfplay(distributed::Bool, progress, game, search::MCTSSearch, target_steps::Int, s0; ϵ, steps_done::Int, sim_depth::Int, gae_lambda) =
     distributed ?
         distributed_mcts(progress, game, search, target_steps, s0; ϵ, steps_done, sim_depth, gae_lambda) :
@@ -156,19 +81,6 @@ mcts_selfplay_sim(search::MCTSSearch, game, s; ϵ, sim_depth, gae_lambda) =
 
 function MarkovGames.behavior_info(policy::AlphaZeroPlanner, s)
     return search_behavior_info(policy.search, policy.game, s)
-end
-
-function search_behavior_info(search::SMOOSSearch, game::MG, s)
-    A1, A2 = actions(game)
-    if isterminal(game, s)
-        x, y = uniform(length(A1)), uniform(length(A2))
-        return ProductDistribution(SparseCat(A1, x), SparseCat(A2, y)), (; v=0.0)
-    end
-    (yr, ys), info = fitted_smoos_info(search, game, s; ϵ=search.ϵ(1))
-    x = normalized_or_uniform(ys[1])
-    y = normalized_or_uniform(ys[2])
-    v = oracle_state_value(search.oracle, game, s)
-    return ProductDistribution(SparseCat(A1, x), SparseCat(A2, y)), (; info..., regret=yr, strategy=ys, v)
 end
 
 function search_behavior_info(search::MCTSSearch, game::MG, s)
@@ -189,9 +101,9 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     0 ≤ sol.gae_lambda ≤ 1 || throw(ArgumentError("gae_lambda must be in [0, 1]"))
     distributed = Distributed.nprocs() > 1
     online_oracle = oracle(sol.search)
-    if uses_loss_scaled_transfer(sol.search) && !(online_oracle isa FittedRegretModel)
-        throw(ArgumentError("LossScaledTransfer requires a FittedRegretModel oracle"))
-    end
+    iszero(sol.search.prior_scale) || throw(ArgumentError(
+        "Training requires MCTSSearch.prior_scale == 0; enable fitted priors only for inference",
+    ))
     ema_oracle = deepcopy(online_oracle)
     progress = Progress(sol.max_steps, safe_lock=false)
     opt_state = Flux.setup(sol.optimiser, online_oracle)
@@ -199,7 +111,6 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     prev_cb_oracle = deepcopy(cb_oracle)
     steps_done = 0
     update = 0
-    search_state = initial_search_state(sol.search)
     active_learning_rate = learning_rate(sol, update)
     active_learning_rate == sol.lr || Flux.Optimisers.adjust!(opt_state; eta=active_learning_rate)
     call(cb, merge((;
@@ -213,13 +124,13 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         exploration_epsilon=sol.search.ϵ(1),
         online_oracle,
         ema_oracle=sol.ema ? ema_oracle : nothing,
-    ), search_callback_state(sol.search, search_state)))
+    )))
     while steps_done < sol.max_steps
         update += 1
         target_steps = min(sol.num_steps, sol.max_steps - steps_done)
         ϵ = sol.search.ϵ(update)
         selfplay_oracle = sol.ema ? ema_oracle : online_oracle
-        iter_search = with_search_state(sol.search, selfplay_oracle, search_state)
+        iter_search = with_oracle(sol.search, selfplay_oracle)
         hists = run_selfplay(distributed, progress, game, iter_search, target_steps, s0; ϵ, steps_done, sim_depth=sol.sim_depth, gae_lambda=sol.gae_lambda)
         batch = merge_histories(hists)
         samples_added = length(batch.v)
@@ -227,12 +138,11 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
         steps_done += samples_added
         train_stats = train!(sol, online_oracle, batch; opt_state)
         sol.ema && ema_update!(ema_oracle, online_oracle, sol.ema_decay)
-        search_state = advance_search_state(sol.search, search_state, train_stats)
         next_learning_rate = learning_rate(sol, update)
         next_learning_rate == active_learning_rate || Flux.Optimisers.adjust!(opt_state; eta=next_learning_rate)
         cb_oracle = sol.ema ? ema_oracle : online_oracle
         cb_info = merge(
-            merge((oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, learning_rate=active_learning_rate, exploration_epsilon=ϵ, online_oracle, ema_oracle=sol.ema ? ema_oracle : nothing), search_callback_state(sol.search, search_state)),
+            (; oracle=cb_oracle, iter=update, update, steps_done, max_steps=sol.max_steps, sim_depth=sol.sim_depth, samples_added, learning_rate=active_learning_rate, exploration_epsilon=ϵ, online_oracle, ema_oracle=sol.ema ? ema_oracle : nothing),
             selfplay_metrics(hists),
             training_metrics(train_stats),
             (; minibatch_metrics=training_minibatch_metrics(train_stats)),
@@ -245,7 +155,7 @@ function MarkovGames.solve(sol::AlphaZeroSolver, game::MG; s0=initialstate(game)
     end
     finish!(progress)
     final_oracle = sol.ema ? ema_oracle : online_oracle
-    return AlphaZeroPlanner(game, with_search_state(sol.search, final_oracle, search_state))
+    return AlphaZeroPlanner(game, with_oracle(sol.search, final_oracle))
 end
 
 function distributed_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth, gae_lambda=0.95)
@@ -279,46 +189,6 @@ function serial_mcts(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_
     collected = 0
     while collected < num_steps
         hist = trim_history(mcts_selfplay_sim(search, game, rand(s0); ϵ, sim_depth, gae_lambda), num_steps - collected)
-        n = length(hist.v)
-        iszero(n) && break
-        push!(hists, hist)
-        collected += n
-        update!(progress, steps_done + collected)
-    end
-    return hists
-end
-
-function distributed_smoos(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth, gae_lambda=0.95)
-    hists = NamedTuple[]
-    collected = 0
-    n_tasks = max(1, Distributed.nworkers())
-    while collected < num_steps
-        task_count = min(n_tasks, num_steps - collected)
-        new_hists = pmap(1:task_count) do _
-            smoos_sim(search, game, rand(s0); ϵ, sim_depth, gae_lambda)
-        end
-        made_progress = false
-        for hist in new_hists
-            remaining = num_steps - collected
-            iszero(remaining) && break
-            hist = trim_history(hist, remaining)
-            n = length(hist.v)
-            iszero(n) && continue
-            push!(hists, hist)
-            collected += n
-            made_progress = true
-            update!(progress, steps_done + collected)
-        end
-        made_progress || break
-    end
-    return hists
-end
-
-function serial_smoos(progress, game, search, num_steps::Int, s0; ϵ=0.30, steps_done::Int=0, sim_depth::Int=search.max_depth, gae_lambda=0.95)
-    hists = NamedTuple[]
-    collected = 0
-    while collected < num_steps
-        hist = trim_history(smoos_sim(search, game, rand(s0); ϵ, sim_depth, gae_lambda), num_steps - collected)
         n = length(hist.v)
         iszero(n) && break
         push!(hists, hist)

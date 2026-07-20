@@ -11,7 +11,6 @@ using Distributed
 using POMDPs
 using POMDPTools
 using SpecialFunctions
-using D3Trees
 
 include("metrics.jl")
 export selfplay_metrics, training_metrics, batch_metrics, oracle_metrics
@@ -25,11 +24,9 @@ export FittedRegretModel, ActorCritic, CriticOnly, MultiActor, StaticFittedRegre
 include("search/search.jl")
 
 include("solver.jl")
-export AlphaZeroSolver, SMOOSSearch, MCTSSearch, RegretMatchingSearch, RegretMatchingMethod, Vanilla, Plus, LossScaledTransfer, AlphaZeroPlanner
+export AlphaZeroSolver, MCTSSearch, RegretMatchingSearch, RegretMatchingMethod, Vanilla, Plus, AlphaZeroPlanner
 
 include("train.jl")
 export @modeldir, @model
-
-include("vis.jl")
 
 end # module MatrixAlphaZero

@@ -4,11 +4,11 @@ using Random
 function policy1_from_tree(game, planner, tree)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.strategy[1][idx])
+        if isnothing(idx) || isempty(tree.policy_sum[1][idx])
             x, _ = AZ.state_strategy(AZ.oracle(planner), game, s)
             return x
         else
-            return AZ.normalized_or_uniform(tree.strategy[1][idx])
+            return AZ.normalized_or_uniform(tree.policy_sum[1][idx])
         end
     end
 end
@@ -16,11 +16,11 @@ end
 function policy2_from_tree(game, planner, tree)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.strategy[2][idx])
+        if isnothing(idx) || isempty(tree.policy_sum[2][idx])
             _, y = AZ.state_strategy(AZ.oracle(planner), game, s)
             return y
         else
-            return AZ.normalized_or_uniform(tree.strategy[2][idx])
+            return AZ.normalized_or_uniform(tree.policy_sum[2][idx])
         end
     end
 end
@@ -28,44 +28,12 @@ end
 function joint_policy_from_tree(game, planner, tree)
     return function (game, s)
         idx = findfirst(==(s), tree.s)
-        if isnothing(idx) || isempty(tree.strategy[1][idx])
+        if isnothing(idx) || isempty(tree.policy_sum[1][idx])
             return AZ.state_strategy(AZ.oracle(planner), game, s)
         else
-            return AZ.normalized_or_uniform(tree.strategy[1][idx]), AZ.normalized_or_uniform(tree.strategy[2][idx])
+            return AZ.normalized_or_uniform(tree.policy_sum[1][idx]), AZ.normalized_or_uniform(tree.policy_sum[2][idx])
         end
     end
-end
-
-function search_eval(planner::AlphaZeroPlanner, params::SMOOSSearch, game::MG, s; ϵ=0.30, every=10, progress=true)
-    tree = AZ.Tree(params, game, s)
-    (;oos_iterations) = params
-    iter    = Int[]
-    brvs1   = Float64[]
-    brvs2   = Float64[]
-    v       = Float64[]
-    p = Progress(oos_iterations; enabled=progress)
-    for i ∈ 1:oos_iterations
-        AZ.smoos_trajectory!(params, tree, game, 1, 0, 1.0, 1.0, 1.0, 1.0; ϵ)
-        if iszero(mod(i, every))
-            π1 = policy1_from_tree(game, planner, tree)
-            π2 = policy2_from_tree(game, planner, tree)
-            planner_oracle = AZ.oracle(planner)
-            brv1, brv2 = approx_br_values_both_st(game, planner_oracle, π1, π2, s; max_depth=5)
-            t = AZ.oracle_state_value(planner_oracle, game, s)
-            push!(iter, i)
-            push!(brvs1, brv1)
-            push!(brvs2, brv2)
-            push!(v, t)
-        end
-        next!(p)
-    end
-    finish!(p)
-    return (;
-        iter, 
-        brv1 = brvs1, 
-        brv2 = brvs2, 
-        v
-    )
 end
 
 struct FunctionBehavior{F} <: Policy
@@ -95,10 +63,6 @@ function exploit_p2_joint_policy(planner::AlphaZeroPlanner, game::MG)
         return ProductDistribution(Deterministic(actions(game)[2][a1]), σ[2])
     end |> FunctionBehavior
 end
-
-sim_eval(planner::AlphaZeroPlanner, params::SMOOSSearch, game::MG, s; kwargs...) =
-    search_eval(planner, params, game, s; kwargs...)
-
 
 # Convenience: policies from your oracle (policy head)
 policy1_from_oracle(oracle) = (game, s) -> first(AZ.state_strategy(oracle, game, s))
