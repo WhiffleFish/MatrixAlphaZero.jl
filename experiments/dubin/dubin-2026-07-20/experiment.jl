@@ -16,7 +16,7 @@ const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const DubinTools = ExperimentTools.Dubin
 const EXPERIMENT_NAME = "dubin-2026-07-20"
-const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-500"
+const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-100q-prior100"
 const SEED = 0
 
 @isdefined(CONDITION) || error("Define CONDITION before including experiment.jl")
@@ -30,11 +30,12 @@ args = ExperimentTools.parse_commandline(
     update_epochs=2,
     num_batches=4,
     tree_queries=500,
+    inference_tree_queries=100,
     max_depth=5,
     sim_depth=50,
     runs=100,
     every=10,
-    prior_scale=500.0,
+    prior_scale=100.0,
 )
 
 p = addprocs(args["addprocs"])
@@ -44,11 +45,17 @@ num_steps = args["num_steps"]
 update_epochs = args["update_epochs"]
 num_batches = args["num_batches"]
 tree_queries = args["tree_queries"]
+inference_tree_queries = args["inference_tree_queries"]
 search_depth = args["max_depth"]
 sim_depth = args["sim_depth"]
 eval_runs = args["runs"]
 eval_every = args["every"]
 inference_prior_scale = Float64(args["prior_scale"])
+tree_queries > 0 || throw(ArgumentError("tree_queries must be positive"))
+inference_tree_queries > 0 || throw(ArgumentError("inference_tree_queries must be positive"))
+0 <= inference_prior_scale <= tree_queries || throw(ArgumentError(
+    "prior_scale must be in [0, tree_queries] so the equivalent transfer weight is at most 1",
+))
 
 width = 32
 lr = 3f-4
@@ -114,10 +121,10 @@ function init_oracle(width, na1, na2; value_weight, regret_weight, strategy_weig
     )
 end
 
-function build_search(oracle; epsilon, prior_scale=0.0)
+function build_search(oracle; epsilon, prior_scale=0.0, queries=tree_queries)
     return AZ.MCTSSearch(;
         oracle,
-        tree_queries,
+        tree_queries=queries,
         max_depth=search_depth,
         max_time,
         search_style=AZ.RegretMatchingSearch(; backup, method=AZ.Plus()),
@@ -146,17 +153,13 @@ function prefixed_az_eval_metrics(result::NamedTuple, prefix::AbstractString, az
     return (; pairs...)
 end
 
-function print_eval_summary(iter, az_p1_result, az_p2_result)
+function print_eval_summary(iter, transfer_p1, transfer_p2, no_transfer_p1, no_transfer_p2)
     println(
         "eval iter $(iter): ",
-        "AZ p1 reward=$(round(az_p1_result.reward[1]; digits=3)) ",
-        "goal=$(round(az_p1_result.attacker_goal_rate; digits=3)) ",
-        "tagged=$(round(az_p1_result.tagged_rate; digits=3)) ",
-        "steps=$(round(az_p1_result.mean_steps; digits=1)); ",
-        "AZ p2 reward=$(round(az_p2_result.reward[2]; digits=3)) ",
-        "goal=$(round(az_p2_result.attacker_goal_rate; digits=3)) ",
-        "tagged=$(round(az_p2_result.tagged_rate; digits=3)) ",
-        "steps=$(round(az_p2_result.mean_steps; digits=1))",
+        "transfer p1=$(round(transfer_p1.reward[1]; digits=3)) ",
+        "p2=$(round(transfer_p2.reward[2]; digits=3)); ",
+        "no-transfer p1=$(round(no_transfer_p1.reward[1]; digits=3)) ",
+        "p2=$(round(no_transfer_p2.reward[2]; digits=3))",
     )
     return nothing
 end
@@ -204,25 +207,59 @@ end
 function (cb::StatRolloutEvalCallback)(info::NamedTuple)
     hasproperty(info, :iter) || return
     iszero(mod(info.iter, cb.eval_every)) || return
-    search = build_search(info.oracle; epsilon=_ -> eval_search_epsilon(info), prior_scale=inference_prior_scale)
-    planner = AZ.AlphaZeroPlanner(cb.game, search)
-    az_p1 = Tools.JointPolicy(
-        Tools.SinglePlayerAlphaZeroPolicy(planner, 1),
+    epsilon = _ -> eval_search_epsilon(info)
+    transfer_planner = AZ.AlphaZeroPlanner(
+        cb.game,
+        build_search(
+            info.oracle;
+            epsilon,
+            prior_scale=inference_prior_scale,
+            queries=inference_tree_queries,
+        ),
+    )
+    no_transfer_planner = AZ.AlphaZeroPlanner(
+        cb.game,
+        build_search(info.oracle; epsilon, prior_scale=0.0, queries=inference_tree_queries),
+    )
+    transfer_p1_policy = Tools.JointPolicy(
+        Tools.SinglePlayerAlphaZeroPolicy(transfer_planner, 1),
         DubinTools.dubin_defender_heuristic(cb.game),
     )
-    az_p2 = Tools.JointPolicy(
+    transfer_p2_policy = Tools.JointPolicy(
         DubinTools.dubin_attacker_heuristic(cb.game),
-        Tools.SinglePlayerAlphaZeroPolicy(planner, 2),
+        Tools.SinglePlayerAlphaZeroPolicy(transfer_planner, 2),
     )
-    Random.seed!(SEED + 10_000_000 + 2 * info.iter)
-    az_p1_result = rollout_eval(cb, az_p1)
-    Random.seed!(SEED + 10_000_001 + 2 * info.iter)
-    az_p2_result = rollout_eval(cb, az_p2)
+    no_transfer_p1_policy = Tools.JointPolicy(
+        Tools.SinglePlayerAlphaZeroPolicy(no_transfer_planner, 1),
+        DubinTools.dubin_defender_heuristic(cb.game),
+    )
+    no_transfer_p2_policy = Tools.JointPolicy(
+        DubinTools.dubin_attacker_heuristic(cb.game),
+        Tools.SinglePlayerAlphaZeroPolicy(no_transfer_planner, 2),
+    )
+    p1_seed = SEED + 10_000_000 + 2 * info.iter
+    p2_seed = p1_seed + 1
+    Random.seed!(p1_seed)
+    transfer_p1_result = rollout_eval(cb, transfer_p1_policy)
+    Random.seed!(p2_seed)
+    transfer_p2_result = rollout_eval(cb, transfer_p2_policy)
+    Random.seed!(p1_seed)
+    no_transfer_p1_result = rollout_eval(cb, no_transfer_p1_policy)
+    Random.seed!(p2_seed)
+    no_transfer_p2_result = rollout_eval(cb, no_transfer_p2_policy)
     metrics = merge(
-        prefixed_az_eval_metrics(az_p1_result, "eval/az_p1_vs_heuristic", 1),
-        prefixed_az_eval_metrics(az_p2_result, "eval/heuristic_vs_az_p2", 2),
+        prefixed_az_eval_metrics(transfer_p1_result, "eval/transfer_search_p1_vs_heuristic", 1),
+        prefixed_az_eval_metrics(transfer_p2_result, "eval/heuristic_vs_transfer_search_p2", 2),
+        prefixed_az_eval_metrics(no_transfer_p1_result, "eval/no_transfer_search_p1_vs_heuristic", 1),
+        prefixed_az_eval_metrics(no_transfer_p2_result, "eval/heuristic_vs_no_transfer_search_p2", 2),
     )
-    print_eval_summary(info.iter, az_p1_result, az_p2_result)
+    print_eval_summary(
+        info.iter,
+        transfer_p1_result,
+        transfer_p2_result,
+        no_transfer_p1_result,
+        no_transfer_p2_result,
+    )
     isnothing(cb.wandb_cb) || cb.wandb_cb(merge((; iter=info.iter), metrics))
     return nothing
 end
@@ -265,7 +302,7 @@ wandb_config = Dict{String,Any}(
     "seed" => SEED,
     "search/name" => SEARCH_NAME,
     "search/type" => "MCTSSearch",
-    "search/tree_queries" => search.tree_queries,
+    "search/training_tree_queries" => search.tree_queries,
     "search/max_depth" => search.max_depth,
     "search/max_time" => search.max_time,
     "search/backup" => string(search.search_style.backup),
@@ -273,6 +310,8 @@ wandb_config = Dict{String,Any}(
     "search/value_target" => string(search.value_target),
     "search/training_prior_scale" => search.prior_scale,
     "inference/prior_scale" => inference_prior_scale,
+    "inference/tree_queries" => inference_tree_queries,
+    "inference/equivalent_transfer_weight" => inference_prior_scale / tree_queries,
     "game" => "DubinMG",
     "sim_depth" => sim_depth,
     "max_steps" => max_steps,
@@ -325,4 +364,3 @@ callbacks = isnothing(wandb_cb) ?
 solve(solver, game; s0=Deterministic(s0), cb=callbacks)
 isnothing(wandb_cb) || close(wandb_cb)
 rmprocs(p)
-

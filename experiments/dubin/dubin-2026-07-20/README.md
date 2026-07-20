@@ -8,8 +8,16 @@ those ordinary local-search targets.
 Regret and average-strategy priors are enabled only in evaluation/deployment.
 At node history `h`, both cumulative initializations use
 `prior_scale * q_prior(h)`, where `q_prior(h)` is the joint reach under the
-learned average-policy prior. The default inference scale is 500, matching the
-local search budget. Training enforces a scale of zero.
+learned average-policy prior. The default inference scale is 100. Interpreting
+`prior_scale = wT1` with the 500-query source solve gives `w = 0.2`, comfortably
+below the theoretical ceiling `w = 1`. Training enforces a scale of zero.
+
+Periodic evaluation benchmarks the transferred solver against a matched
+no-transfer solver. They share the same learned value oracle, RM+ configuration,
+100-query inference budget, opponent, and random seeds; only `prior_scale`
+differs (`100` versus `0`). Training targets still use fresh 500-query solves,
+so the comparison tests whether transfer recovers useful play with one fifth of
+the deployment search.
 
 Run from the repository root:
 
@@ -19,4 +27,5 @@ julia --project=experiments \
 ```
 
 Use `--test` for the standard short smoke run. Override deployment evaluation
-strength with `--prior_scale VALUE`.
+strength with `--prior_scale VALUE` or its search budget with
+`--inference_tree_queries VALUE`.

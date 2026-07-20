@@ -8,9 +8,18 @@ local-search targets.
 
 Evaluation/deployment optionally initializes both fitted priors with
 `prior_scale * q_prior(h)`, where `q_prior(h)` is the joint reach of node `h`
-under the learned average-policy prior. The default inference scale is 500,
-matching the local search budget. The matched value-only evaluation uses zero
-prior scale, and training enforces zero prior scale.
+under the learned average-policy prior. The default inference scale is 100.
+Interpreting `prior_scale = wT1` with the 500-query source solve gives `w = 0.2`,
+comfortably below the theoretical ceiling `w = 1`. Training enforces zero prior
+scale.
+
+Periodic evaluation benchmarks the transferred solver against a matched
+no-transfer solver. They share the same learned value oracle, RM+ configuration,
+100-query inference budget, opponents, fixed state bank, and random seeds; only
+`prior_scale` differs (`100` versus `0`). Training targets still use fresh
+500-query solves, so the comparison tests whether transfer recovers useful play
+with one fifth of the deployment search. The learned raw average strategy is
+also evaluated separately.
 
 Run from the repository root:
 
@@ -20,4 +29,5 @@ julia --project=experiments \
 ```
 
 Use `--test` for the standard short smoke run. Override deployment evaluation
-strength with `--prior_scale VALUE`.
+strength with `--prior_scale VALUE` or its search budget with
+`--inference_tree_queries VALUE`.

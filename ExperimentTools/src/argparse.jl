@@ -4,6 +4,7 @@ function parse_commandline(;
         update_epochs   = 1,
         num_batches     = 1,
         tree_queries    = 20,
+        inference_tree_queries = nothing,
         max_depth       = 50,
         sim_depth      = nothing,
         runs            = nothing,
@@ -49,6 +50,14 @@ function parse_commandline(;
         end
     end
 
+    if !isnothing(inference_tree_queries)
+        @add_arg_table! s begin
+            "--inference_tree_queries"
+                arg_type = Int
+                default = inference_tree_queries
+        end
+    end
+
     if !isnothing(runs)
         @add_arg_table! s begin
             "--runs"
@@ -89,6 +98,9 @@ function parse_commandline(;
         parsed_args["update_epochs"] = 1
         parsed_args["num_batches"] = 1
         parsed_args["tree_queries"] = 1
+        if !isnothing(inference_tree_queries)
+            parsed_args["inference_tree_queries"] = 1
+        end
         parsed_args["max_depth"] = min(max_depth, 10)
         if !isnothing(sim_depth)
             parsed_args["sim_depth"] = min(sim_depth, 10)
@@ -101,6 +113,12 @@ function parse_commandline(;
         end
         if !isnothing(every)
             parsed_args["every"] = 1
+        end
+        if !isnothing(prior_scale)
+            parsed_args["prior_scale"] = min(
+                Float64(parsed_args["prior_scale"]),
+                Float64(parsed_args["tree_queries"]),
+            )
         end
     end
     return parsed_args

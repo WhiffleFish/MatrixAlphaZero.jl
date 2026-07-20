@@ -17,7 +17,7 @@ using Statistics
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
 const EXPERIMENT_NAME = "sda-2026-07-20"
-const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-500"
+const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-100q-prior100"
 const SEARCH_NAME = "rm_plus_no_transfer_train"
 const SEED = 0
 const SDAGAMES_TREE_SHA = "3b41ec411b327b4889cca64648a38d1b1aa7e47f"
@@ -32,11 +32,12 @@ args = ExperimentTools.parse_commandline(
     update_epochs=2,
     num_batches=4,
     tree_queries=500,
+    inference_tree_queries=100,
     max_depth=5,
     sim_depth=50,
     runs=100,
     every=10,
-    prior_scale=500.0,
+    prior_scale=100.0,
 )
 
 p = addprocs(args["addprocs"])
@@ -46,11 +47,17 @@ num_steps = args["num_steps"]
 update_epochs = args["update_epochs"]
 num_batches = args["num_batches"]
 tree_queries = args["tree_queries"]
+inference_tree_queries = args["inference_tree_queries"]
 search_depth = args["max_depth"]
 sim_depth = args["sim_depth"]
 eval_runs = args["runs"]
 eval_every = args["every"]
 inference_prior_scale = Float64(args["prior_scale"])
+tree_queries > 0 || throw(ArgumentError("tree_queries must be positive"))
+inference_tree_queries > 0 || throw(ArgumentError("inference_tree_queries must be positive"))
+0 <= inference_prior_scale <= tree_queries || throw(ArgumentError(
+    "prior_scale must be in [0, tree_queries] so the equivalent transfer weight is at most 1",
+))
 
 width = 32
 lr = 3f-4
@@ -139,48 +146,10 @@ function init_oracle(width, na1, na2; value_weight, regret_weight, strategy_weig
     )
 end
 
-# Evaluation-only wrapper that exposes the learned critic while hiding learned
-# regret and strategy. This is the matched value-oracle control for testing the
-# marginal effect of transfer without training a second model.
-struct ValueOnlySearchOracle{O}
-    oracle::O
-    na::NTuple{2,Int}
-end
-
-ValueOnlySearchOracle(game::MG, oracle) =
-    ValueOnlySearchOracle(oracle, Tuple(length.(actions(game))))
-
-uniform_pair(oracle::ValueOnlySearchOracle) = (
-    fill(Float32(inv(oracle.na[1])), oracle.na[1]),
-    fill(Float32(inv(oracle.na[2])), oracle.na[2]),
-)
-
-AZ.value(oracle::ValueOnlySearchOracle, x) = AZ.value(oracle.oracle, x)
-AZ.state_value(oracle::ValueOnlySearchOracle, game, s) =
-    AZ.state_value(oracle.oracle, game, s)
-AZ.batch_state_value(oracle::ValueOnlySearchOracle, game, states) =
-    AZ.batch_state_value(oracle.oracle, game, states)
-AZ.state_policy(oracle::ValueOnlySearchOracle, game, s) = uniform_pair(oracle)
-AZ.batch_state_policy(oracle::ValueOnlySearchOracle, game, states) = (
-    fill(Float32(inv(oracle.na[1])), oracle.na[1], length(states)),
-    fill(Float32(inv(oracle.na[2])), oracle.na[2], length(states)),
-)
-AZ.state_strategy(oracle::ValueOnlySearchOracle, game, s) = uniform_pair(oracle)
-AZ.batch_state_strategy(oracle::ValueOnlySearchOracle, game, states) =
-    AZ.batch_state_policy(oracle, game, states)
-AZ.state_regret(oracle::ValueOnlySearchOracle, game, s) = (
-    zeros(Float32, oracle.na[1]),
-    zeros(Float32, oracle.na[2]),
-)
-AZ.batch_state_regret(oracle::ValueOnlySearchOracle, game, states) = (
-    zeros(Float32, oracle.na[1], length(states)),
-    zeros(Float32, oracle.na[2], length(states)),
-)
-
-function build_search(oracle; epsilon, prior_scale=0.0)
+function build_search(oracle; epsilon, prior_scale=0.0, queries=tree_queries)
     return AZ.MCTSSearch(;
         oracle,
-        tree_queries,
+        tree_queries=queries,
         max_depth=search_depth,
         max_time,
         search_style=AZ.RegretMatchingSearch(; backup, method=AZ.Plus()),
@@ -249,32 +218,39 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
 
     # Evaluation is the deployed policy: no forced exploration. Search already
     # used epsilon for traversal while accumulating an unperturbed strategy.
-    full_search = build_search(info.oracle; epsilon=_ -> EVAL_EPSILON, prior_scale=inference_prior_scale)
-    value_only_search = build_search(
-        ValueOnlySearchOracle(cb.game, info.oracle);
+    transfer_search = build_search(
+        info.oracle;
         epsilon=_ -> EVAL_EPSILON,
+        prior_scale=inference_prior_scale,
+        queries=inference_tree_queries,
     )
-    full_planner = AZ.AlphaZeroPlanner(cb.game, full_search)
-    value_only_planner = AZ.AlphaZeroPlanner(cb.game, value_only_search)
+    no_transfer_search = build_search(
+        info.oracle;
+        epsilon=_ -> EVAL_EPSILON,
+        prior_scale=0.0,
+        queries=inference_tree_queries,
+    )
+    transfer_planner = AZ.AlphaZeroPlanner(cb.game, transfer_search)
+    no_transfer_planner = AZ.AlphaZeroPlanner(cb.game, no_transfer_search)
     no_burn_1 = Tools.sda_no_burn_heuristic(cb.game, 1)
     no_burn_2 = Tools.sda_no_burn_heuristic(cb.game, 2)
     raw_joint = Tools.OracleStrategyPolicy(cb.game, info.oracle)
 
-    search_observer = Tools.JointPolicy(
-        Tools.SinglePlayerAlphaZeroPolicy(full_planner, 1),
+    transfer_observer = Tools.JointPolicy(
+        Tools.SinglePlayerAlphaZeroPolicy(transfer_planner, 1),
         no_burn_2,
     )
-    search_target = Tools.JointPolicy(
+    transfer_target = Tools.JointPolicy(
         no_burn_1,
-        Tools.SinglePlayerAlphaZeroPolicy(full_planner, 2),
+        Tools.SinglePlayerAlphaZeroPolicy(transfer_planner, 2),
     )
-    value_only_observer = Tools.JointPolicy(
-        Tools.SinglePlayerAlphaZeroPolicy(value_only_planner, 1),
+    no_transfer_observer = Tools.JointPolicy(
+        Tools.SinglePlayerAlphaZeroPolicy(no_transfer_planner, 1),
         no_burn_2,
     )
-    value_only_target = Tools.JointPolicy(
+    no_transfer_target = Tools.JointPolicy(
         no_burn_1,
-        Tools.SinglePlayerAlphaZeroPolicy(value_only_planner, 2),
+        Tools.SinglePlayerAlphaZeroPolicy(no_transfer_planner, 2),
     )
     raw_observer = Tools.JointPolicy(
         Tools.ProjectedPlayerPolicy(raw_joint, 1),
@@ -285,39 +261,39 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
         Tools.ProjectedPlayerPolicy(raw_joint, 2),
     )
 
-    seed = SEED + 10_000_000 + 6 * info.iter
+    seed = SEED + 10_000_000 + 4 * info.iter
     Random.seed!(seed)
-    search_observer_result = rollout_eval(cb, search_observer)
+    transfer_observer_result = rollout_eval(cb, transfer_observer)
     Random.seed!(seed + 1)
-    search_target_result = rollout_eval(cb, search_target)
+    transfer_target_result = rollout_eval(cb, transfer_target)
+    Random.seed!(seed)
+    no_transfer_observer_result = rollout_eval(cb, no_transfer_observer)
+    Random.seed!(seed + 1)
+    no_transfer_target_result = rollout_eval(cb, no_transfer_target)
     Random.seed!(seed + 2)
-    value_only_observer_result = rollout_eval(cb, value_only_observer)
-    Random.seed!(seed + 3)
-    value_only_target_result = rollout_eval(cb, value_only_target)
-    Random.seed!(seed + 4)
     raw_observer_result = rollout_eval(cb, raw_observer)
-    Random.seed!(seed + 5)
+    Random.seed!(seed + 3)
     raw_target_result = rollout_eval(cb, raw_target)
 
     metrics = merge(
         prefixed_eval_metrics(
-            search_observer_result,
-            "eval/search_observer_vs_no_burn",
+            transfer_observer_result,
+            "eval/transfer_search_observer_vs_no_burn",
             1,
         ),
         prefixed_eval_metrics(
-            search_target_result,
-            "eval/no_burn_vs_search_target",
+            transfer_target_result,
+            "eval/no_burn_vs_transfer_search_target",
             2,
         ),
         prefixed_eval_metrics(
-            value_only_observer_result,
-            "eval/value_only_search_observer_vs_no_burn",
+            no_transfer_observer_result,
+            "eval/no_transfer_search_observer_vs_no_burn",
             1,
         ),
         prefixed_eval_metrics(
-            value_only_target_result,
-            "eval/no_burn_vs_value_only_search_target",
+            no_transfer_target_result,
+            "eval/no_burn_vs_no_transfer_search_target",
             2,
         ),
         prefixed_eval_metrics(
@@ -333,10 +309,10 @@ function (cb::StatRolloutEvalCallback)(info::NamedTuple)
     )
     println(
         "eval iter $(info.iter): ",
-        "search observer=$(round(search_observer_result.reward[1]; digits=3)) ",
-        "target=$(round(search_target_result.reward[2]; digits=3)); ",
-        "value-only observer=$(round(value_only_observer_result.reward[1]; digits=3)) ",
-        "target=$(round(value_only_target_result.reward[2]; digits=3)); ",
+        "transfer observer=$(round(transfer_observer_result.reward[1]; digits=3)) ",
+        "target=$(round(transfer_target_result.reward[2]; digits=3)); ",
+        "no-transfer observer=$(round(no_transfer_observer_result.reward[1]; digits=3)) ",
+        "target=$(round(no_transfer_target_result.reward[2]; digits=3)); ",
         "raw observer=$(round(raw_observer_result.reward[1]; digits=3)) ",
         "target=$(round(raw_target_result.reward[2]; digits=3))",
     )
@@ -398,7 +374,7 @@ wandb_config = Dict{String,Any}(
     "game/action_counts" => "$(na1)x$(na2)",
     "search/name" => SEARCH_NAME,
     "search/type" => "MCTSSearch",
-    "search/tree_queries" => search.tree_queries,
+    "search/training_tree_queries" => search.tree_queries,
     "search/max_depth" => search.max_depth,
     "search/max_time" => search.max_time,
     "search/backup" => string(search.search_style.backup),
@@ -406,6 +382,8 @@ wandb_config = Dict{String,Any}(
     "search/value_target" => string(search.value_target),
     "search/training_prior_scale" => search.prior_scale,
     "inference/prior_scale" => inference_prior_scale,
+    "inference/tree_queries" => inference_tree_queries,
+    "inference/equivalent_transfer_weight" => inference_prior_scale / tree_queries,
     "sim_depth" => sim_depth,
     "max_steps" => max_steps,
     "num_steps" => num_steps,
@@ -466,4 +444,3 @@ callbacks = isnothing(wandb_cb) ?
 solve(solver, game; s0=initialstate(game), cb=callbacks)
 isnothing(wandb_cb) || close(wandb_cb)
 rmprocs(p)
-

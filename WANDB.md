@@ -105,12 +105,15 @@ The current Dubin experiment scripts run periodic evaluation rollouts against
 the hand-coded heuristic policies. These metrics are logged only on iterations
 where `iter % eval_every == 0`.
 
-There are two matchups:
+There are four searched matchups. Transfer and no-transfer evaluations use the
+same 100-query inference budget and paired random seeds:
 
 | Prefix | Meaning |
 |---|---|
-| `eval/az_p1_vs_heuristic/*` | AlphaZero controls player 1, the Dubin defender heuristic controls player 2. |
-| `eval/heuristic_vs_az_p2/*` | The Dubin attacker heuristic controls player 1, AlphaZero controls player 2. |
+| `eval/transfer_search_p1_vs_heuristic/*` | Transfer search controls player 1; the Dubin defender heuristic controls player 2. |
+| `eval/heuristic_vs_transfer_search_p2/*` | The Dubin attacker heuristic controls player 1; transfer search controls player 2. |
+| `eval/no_transfer_search_p1_vs_heuristic/*` | Matched no-transfer search controls player 1. |
+| `eval/heuristic_vs_no_transfer_search_p2/*` | Matched no-transfer search controls player 2. |
 
 Each matchup logs:
 
@@ -122,12 +125,8 @@ Each matchup logs:
 | `tagged_rate` | Fraction of eval rollouts ending in defender tag. |
 | `timeout_rate` | Fraction of eval rollouts ending by timeout. |
 
-Each matchup also logs one uncertainty metric under `eval_extra`:
-
-| Metric | Meaning |
-|---|---|
-| `eval_extra/az_p1_vs_heuristic/stderr_reward` | Standard error of player 1 AlphaZero reward. |
-| `eval_extra/heuristic_vs_az_p2/stderr_reward` | Standard error of player 2 AlphaZero reward. |
+Each matchup also logs `stderr_reward` under the corresponding `eval_extra/*`
+prefix.
 
 The eval callbacks intentionally do not log duplicated search epsilon values or
 constant eval `max_steps`.
@@ -166,7 +165,7 @@ Regret-matching MCTS config keys:
 
 | Config key | Meaning |
 |---|---|
-| `search/tree_queries` | MCTS tree-query budget. |
+| `search/training_tree_queries` | MCTS tree-query budget used to generate training targets. |
 | `search/max_depth` | Search depth limit. |
 | `search/max_time` | MCTS wall-clock time limit. |
 | `search/backup` | MCTS backup style used by `RegretMatchingSearch`. |
@@ -174,6 +173,8 @@ Regret-matching MCTS config keys:
 | `search/value_target` | Value target source, such as `search` or `rollout`. |
 | `search/training_prior_scale` | Fitted-prior scale used during training; required to be zero. |
 | `inference/prior_scale` | Single regret/average-strategy prior scale used by evaluation and deployment. |
+| `inference/tree_queries` | MCTS tree-query budget used by evaluation and deployment. |
+| `inference/equivalent_transfer_weight` | `prior_scale / training_tree_queries`, corresponding to `w` when `prior_scale=wT1`. |
 | `oracle/value_weight` | Value-loss weight. |
 | `oracle/regret_weight` | Average-regret loss weight for fitted-regret models. |
 | `oracle/strategy_weight` | Average-strategy loss weight for fitted-regret models. |
