@@ -74,3 +74,27 @@ comparisons use `--num-envs 1`; with multiple threaded environments, search
 sampling does not use PPO's environment RNG. The default `--initial-state
 reference` measures exploitability from the fixed training state; use
 `--initial-state game` for the game's initial-state distribution.
+
+## Solver matchup tables
+
+`benchmark_solver_matchups.jl` evaluates each zero-, value-, and full-solver
+policy against a uniform opponent, the role-specific Dubin heuristic, and that
+solver's own PPO response policy. It writes player-specific utility and standard
+error tables under `solver_benchmark_results/` using the fixed reference state:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-16/benchmark_solver_matchups.jl
+```
+
+The 18 independent matchup cells run across up to six worker processes by
+default, while each cell's rollouts remain serial. Use `--workers N` to choose a
+different process count or `--workers 0` for sequential execution. Append
+`--test` for a smoke test with two rollouts per cell.
+
+Convert the four result CSVs into a two-panel LaTeX table with:
+
+```bash
+julia --project=experiments experiments/solver_benchmark_to_latex.jl \
+  experiments/dubin/dubin-2026-07-16/solver_benchmark_results
+```

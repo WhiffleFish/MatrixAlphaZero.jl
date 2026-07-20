@@ -1,0 +1,17 @@
+candidates=32
+depth=5
+epsilon=0.1
+finalists=3
+iterations=64
+leaf_errors=[0.0, 0.025, 0.05, 0.1, 0.2, 0.4]
+output=/Users/tyler/code/MatrixAlphaZero/experiments/dubin/dubin-2026-07-19/tabular_regret_transfer_results
+probe_trials=8
+screen_depth=3
+seed=20260719
+test=false
+transfer_errors=[0.0, 0.025, 0.05, 0.1, 0.2, 0.4]
+trials=32
+threads=4
+selected_attacker=[1.806285497972572, 2.411204504285737, -0.2705116498710156]
+selected_defender=[4.870234852067901, 2.5076120564966677, -2.6982903330828334]
+finite_tree_nodes=22429

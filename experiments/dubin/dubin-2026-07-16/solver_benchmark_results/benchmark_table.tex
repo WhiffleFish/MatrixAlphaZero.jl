@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\caption{Solver benchmark utilities for Dubin. Entries report mean utility $\pm$ standard error for the tree-search player.}
+\label{tab:dubin-solver-benchmarks}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\multicolumn{4}{c}{Tree-search player: Player 1} \\
+\cmidrule(lr){1-4}
+Solver & Uniform random & Heuristic & PPO BR \\
+\midrule
+Zero oracle & $0.298 \pm 0.015$ & $0.025 \pm 0.020$ & $-0.148 \pm 0.017$ \\
+Value oracle & $\mathbf{0.669 \pm 0.010}$ & $\mathbf{0.377 \pm 0.023}$ & $\mathbf{0.052 \pm 0.024}$ \\
+Full solver & $0.599 \pm 0.013$ & $0.274 \pm 0.024$ & $-0.116 \pm 0.024$ \\
+\midrule
+\multicolumn{4}{c}{Tree-search player: Player 2} \\
+\cmidrule(lr){1-4}
+Solver & Uniform random & Heuristic & PPO BR \\
+\midrule
+Zero oracle & $0.390 \pm 0.020$ & $0.036 \pm 0.036$ & $0.036 \pm 0.036$ \\
+Value oracle & $\mathbf{0.693 \pm 0.008}$ & $\mathbf{0.751 \pm 0.014}$ & $0.518 \pm 0.024$ \\
+Full solver & $0.679 \pm 0.009$ & $0.732 \pm 0.016$ & $\mathbf{0.722 \pm 0.017}$ \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\caption{Solver benchmark utilities for SDA. Entries report mean utility $\pm$ standard error for the tree-search player.}
+\label{tab:sda-solver-benchmarks}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\multicolumn{4}{c}{Tree-search player: Player 1} \\
+\cmidrule(lr){1-4}
+Solver & Uniform random & Heuristic & PPO BR \\
+\midrule
+Zero oracle & $17.156 \pm 0.810$ & $19.310 \pm 0.972$ & $\mathbf{16.576 \pm 0.683}$ \\
+Value oracle & $22.881 \pm 0.996$ & $24.288 \pm 1.010$ & $15.346 \pm 0.545$ \\
+Full solver & $\mathbf{25.368 \pm 1.076}$ & $\mathbf{25.226 \pm 1.051}$ & $14.797 \pm 0.510$ \\
+\midrule
+\multicolumn{4}{c}{Tree-search player: Player 2} \\
+\cmidrule(lr){1-4}
+Solver & Uniform random & Heuristic & PPO BR \\
+\midrule
+Zero oracle & $-14.967 \pm 0.881$ & $-18.577 \pm 0.963$ & $-17.168 \pm 0.926$ \\
+Value oracle & $\mathbf{-11.779 \pm 0.584}$ & $\mathbf{-13.150 \pm 0.576}$ & $\mathbf{-13.418 \pm 0.704}$ \\
+Full solver & $-12.658 \pm 0.625$ & $-13.738 \pm 0.582$ & $-13.713 \pm 0.671$ \\
+\bottomrule
+\end{tabular}
+\end{table}

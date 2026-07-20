@@ -88,3 +88,27 @@ Outputs are `best_response_utilities.csv`, `response_utility_summary.csv`,
 `ppo_solver_response_utility_results/`. The summed response utility is only an
 empirical lower-bound diagnostic; a negative value means PPO underfit and is
 uninformative.
+
+## Solver matchup tables
+
+`benchmark_solver_matchups.jl` evaluates each zero-, value-, and full-solver
+policy against a uniform opponent, the no-burn heuristic, and that solver's own
+PPO response policy. It writes player-specific utility and standard-error tables
+under `solver_benchmark_results/` using one shared game-distribution state bank:
+
+```bash
+julia --project=experiments \
+  experiments/sda/sda-2026-07-18/benchmark_solver_matchups.jl
+```
+
+The 18 independent matchup cells run across up to six worker processes by
+default, while each cell's rollouts remain serial. Use `--workers N` to choose a
+different process count or `--workers 0` for sequential execution. Append
+`--test` for a smoke test with two rollouts per cell.
+
+Convert the four result CSVs into a two-panel LaTeX table with:
+
+```bash
+julia --project=experiments experiments/solver_benchmark_to_latex.jl \
+  experiments/sda/sda-2026-07-18/solver_benchmark_results
+```
