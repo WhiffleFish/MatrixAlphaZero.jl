@@ -39,7 +39,9 @@ starts with zero cumulative regret and zero accumulated strategy. Experiments
 may log a static `inference/prior_scale` config value for evaluation or
 deployment. At inference, both learned priors are initialized with
 `prior_scale * q_prior(h)`, where `q_prior(h)` is the node's joint reach under
-the learned average strategy.
+the learned average strategy. This mass also initializes floating node and
+joint-action counts plus their value pseudo-observations, preventing the first
+sample from immediately replacing the learned value estimate.
 
 ## Self-Play
 

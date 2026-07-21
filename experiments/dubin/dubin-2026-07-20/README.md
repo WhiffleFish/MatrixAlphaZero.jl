@@ -29,3 +29,28 @@ julia --project=experiments \
 Use `--test` for the standard short smoke run. Override deployment evaluation
 strength with `--prior_scale VALUE` or its search budget with
 `--inference_tree_queries VALUE`.
+
+## PPO response utilities
+
+`ppo_solver_response_utilities.jl` trains one PPO response for each player
+against each of three 100-query solvers: a zero oracle, the learned value oracle
+without fitted-prior transfer, and the full learned oracle with inference-only
+warm starts (`prior_scale=100`). The PPO episode horizon remains capped at 50
+steps. Results and TensorBoard event files are written under
+`ppo_solver_response_utility_results/`.
+
+Run the complete six-condition evaluation from the repository root:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-20/ppo_solver_response_utilities.jl \
+  --fail-fast true
+```
+
+For a quick compatibility smoke test:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-20/ppo_solver_response_utilities.jl \
+  --test
+```

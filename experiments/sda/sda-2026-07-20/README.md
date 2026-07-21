@@ -12,6 +12,9 @@ under the learned average-policy prior. The default inference scale is 100.
 Interpreting `prior_scale = wT1` with the 500-query source solve gives `w = 0.2`,
 comfortably below the theoretical ceiling `w = 1`. Training enforces zero prior
 scale.
+The same reach-weighted mass initializes the floating node count, joint-action
+counts under the product policy prior, and the node/edge value averages, so the
+critic prior is diluted gradually instead of being replaced by the first sample.
 
 Periodic evaluation benchmarks the transferred solver against a matched
 no-transfer solver. They share the same learned value oracle, RM+ configuration,

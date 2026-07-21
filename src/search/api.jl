@@ -26,9 +26,9 @@ RegretMatchingSearch(backup::Symbol) = RegretMatchingSearch(; backup)
     # regret self-play also supports `:gae`, while policy self-play supports
     # `:rollout` for its bootstrapped environment return.
     value_target    :: Symbol   = :search
-    # Inference-only regret and average-strategy warm start. At a node with
-    # learned joint-policy reach q(h), both fitted priors receive cumulative
-    # weight prior_scale*q(h). Training requires this to remain zero.
+    # Inference-only tree warm start. At a node with learned joint-policy reach
+    # q(h), regret, average strategy, visit counts, and value pseudo-observations
+    # receive mass prior_scale*q(h). Training requires this to remain zero.
     prior_scale     :: Float64  = 0.0
 end
 

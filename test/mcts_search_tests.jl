@@ -146,7 +146,7 @@ end
 @testset "MCTS inference priors and regret training targets" begin
     game = Fixtures.ScalarMatrixGame()
     transfer_oracle = Fixtures.TableOracle(
-        values=Dict(0f0 => 0f0, 1f0 => 5f0),
+        values=Dict(0f0 => 2f0, 1f0 => 5f0),
         regrets=Dict(0f0 => (Float32[0.8, -0.2], Float32[-0.1, 0.9])),
         strategies=Dict(0f0 => (Float32[0.25, 0.75], Float32[0.6, 0.4])),
     )
@@ -161,12 +161,24 @@ end
     @test isapprox(tree.regret[2][1], prior_scale .* [-0.1, 0.9]; atol=1e-6)
     @test isapprox(tree.policy_sum[1][1], prior_scale .* [0.25, 0.75]; atol=1e-6)
     @test isapprox(tree.policy_sum[2][1], prior_scale .* [0.6, 0.4]; atol=1e-6)
+    @test tree.n_s[1] == prior_scale
+    @test eltype(tree.n_s) == Float64
+    @test eltype(tree.n_sa[1]) == Float64
+    @test tree.n_sa[1] ≈ prior_scale .* ([0.25, 0.75] * transpose([0.6, 0.4]))
+    @test sum(tree.n_sa[1]) ≈ tree.n_s[1]
+    @test tree.return_sum[1] == prior_scale * 2.0
 
     # Deeper nodes attenuate the single fitted-prior scale by joint reach under
     # the learned average policy.
     (reached_regret, reached_strategy) = AZ.mcts_prior(params, game, false, 0.25)
     @test reached_regret[1] ≈ (prior_scale * 0.25) .* [0.8, -0.2]
     @test reached_strategy[1] ≈ (prior_scale * 0.25) .* [0.25, 0.75]
+    reached_tree = AZ.Tree(params, game, false)
+    AZ.expand_s!(reached_tree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(params, reached_tree, 1, game; learned_reach=0.25)
+    @test reached_tree.n_s[1] == prior_scale * 0.25
+    @test sum(reached_tree.n_sa[1]) ≈ prior_scale * 0.25
+    @test reached_tree.return_sum[1] == prior_scale * 0.25 * 2.0
 
     plus_params = AZ.MCTSSearch(
         tree_queries=0,
@@ -182,13 +194,9 @@ end
     @test isapprox(plus_tree.regret[2][1], prior_scale .* [0.0, 0.9]; atol=1e-6)
     @test all(iszero, plus_tree.fresh_regret[1][1])
 
-    # Targets exclude inference priors. Training additionally rejects nonzero
-    # prior_scale at the solver boundary.
-    yr, ys = AZ.mcts_root_targets(params, tree, game, 1)
-    @test isapprox(yr[1], [0.0, 0.0]; atol=1e-9)
-    @test isapprox(yr[2], [0.0, 0.0]; atol=1e-9)
-    @test isapprox(ys[1], [0.5, 0.5]; atol=1e-6)
-    @test isapprox(ys[2], [0.5, 0.5]; atol=1e-6)
+    # Inference priors are never subtracted back out to construct learning
+    # targets. Training rejects nonzero prior_scale at the solver boundary.
+    @test_throws ArgumentError AZ.mcts_root_targets(params, tree, game, 1)
 
     # No inference prior configured means every local solve starts from zero.
     plain = AZ.MCTSSearch(tree_queries=0, max_depth=2, oracle=transfer_oracle)

@@ -680,10 +680,26 @@ function summarize_cells(rows, leaf_errors, transfer_errors)
     return summary, baseline, transferred, improvement
 end
 
-function annotate_heatmap!(plot_handle, xs, ys, matrix, text_color)
+function annotate_heatmap!(plot_handle, xs, ys, matrix; text_color="#1A1A1A")
     for (ix, x) in enumerate(xs), (iy, y) in enumerate(ys)
-        color = text_color(matrix[iy, ix])
-        annotate!(plot_handle, x, y, text(@sprintf("%.3f", matrix[iy, ix]), 7, color, :center))
+        annotate!(
+            plot_handle,
+            x,
+            y,
+            text(@sprintf("%.3f", matrix[iy, ix]), 7, text_color, :center),
+        )
+    end
+    return plot_handle
+end
+
+function add_cell_boundaries!(plot_handle, nx::Int, ny::Int)
+    for x in range(0.5, nx + 0.5; length=nx + 1)
+        plot!(plot_handle, [x, x], [0.5, ny + 0.5];
+              color=:white, alpha=0.75, linewidth=0.6, label="")
+    end
+    for y in range(0.5, ny + 0.5; length=ny + 1)
+        plot!(plot_handle, [0.5, nx + 0.5], [y, y];
+              color=:white, alpha=0.75, linewidth=0.6, label="")
     end
     return plot_handle
 end
@@ -705,12 +721,17 @@ function save_heatmaps(
         yticks=(y_positions, y_labels),
     )
     common_max = max(baseline_mean + baseline_std, maximum(transferred), eps())
+    sequential_palette = cgrad(["#F7FBFF", "#C6DBEF", "#6BAED6"])
+    improvement_palette = cgrad(["#D98C82", "#F7F7F7", "#7FB3D1"], [0.0, 0.5, 1.0])
     p_transfer = heatmap(
         x_positions, y_positions, transferred;
         xlabel=L"\mathrm{Leaf\ value\ error}\ \eta_V",
         ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
-        title="RM+ with transfer", color=:viridis, clims=(0, common_max),
+        title="(a) Nash gap after transfer", color=sequential_palette,
+        clims=(0, common_max),
         colorbar_title=L"\mathrm{Nash\ gap}",
+        xlims=(0.5, length(x_positions) + 0.5),
+        ylims=(0.5, length(y_positions) + 0.5),
         axis_ticks...,
     )
     gain_max = max(maximum(abs, improvement), eps())
@@ -718,21 +739,25 @@ function save_heatmaps(
         x_positions, y_positions, improvement;
         xlabel=L"\mathrm{Leaf\ value\ error}\ \eta_V",
         ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
-        title="Paired improvement", color=:balance, clims=(-gain_max, gain_max),
-        colorbar_title=L"\mathrm{Gap\ reduction}",
+        title="(b) Reduction relative to ordinary RM+",
+        color=improvement_palette, clims=(-gain_max, gain_max),
+        colorbar_title=L"\mathrm{Nash\ gap\ reduction}",
+        xlims=(0.5, length(x_positions) + 0.5),
+        ylims=(0.5, length(y_positions) + 0.5),
         axis_ticks...,
     )
-    sequential_text_color = value -> value < 0.35common_max ? :white : :black
-    divergent_text_color = value -> abs(value) > 0.55gain_max ? :white : :black
-    annotate_heatmap!(p_transfer, x_positions, y_positions, transferred, sequential_text_color)
-    annotate_heatmap!(p_improvement, x_positions, y_positions, improvement, divergent_text_color)
+    add_cell_boundaries!(p_transfer, length(x_positions), length(y_positions))
+    add_cell_boundaries!(p_improvement, length(x_positions), length(y_positions))
+    annotate_heatmap!(p_transfer, x_positions, y_positions, transferred)
+    annotate_heatmap!(p_improvement, x_positions, y_positions, improvement)
     baseline_label = @sprintf(
         "Ordinary RM+ reference: %.3f ± %.3f SD", baseline_mean, baseline_std,
     )
     figure = plot(
         p_transfer, p_improvement;
-        layout=(1, 2), size=(1200, 560), plot_title=baseline_label,
-        margin=6Plots.mm, bottom_margin=9Plots.mm,
+        layout=(1, 2), size=(1250, 550), plot_title=baseline_label,
+        plot_titlefontsize=11, titlefontsize=11, guidefontsize=10,
+        tickfontsize=8, margin=6Plots.mm, bottom_margin=9Plots.mm,
     )
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.png"))
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.pdf"))

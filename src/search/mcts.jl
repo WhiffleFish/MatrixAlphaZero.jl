@@ -1,8 +1,8 @@
 struct SearchTree{S}
     s           :: Vector{S}
     s_children  :: Vector{Matrix{Int}}
-    n_sa        :: Vector{Matrix{Int}}
-    n_s         :: Vector{Int}
+    n_sa        :: Vector{Matrix{Float64}}
+    n_s         :: Vector{Float64}
     prior       :: NTuple{2, Vector{Vector{Float32}}}
     v           :: Vector{Matrix{Float64}}
     r           :: Vector{Matrix{Float64}}
@@ -13,6 +13,7 @@ struct SearchTree{S}
 end
 
 const NO_CHILDREN = Matrix{Int}(undef, 0, 0)
+const NO_COUNTS = Matrix{Float64}(undef, 0, 0)
 const NO_PRIOR = Vector{Float32}(undef, 0)
 const NO_FLOAT = Vector{Float64}(undef, 0)
 
@@ -20,8 +21,8 @@ function SearchTree(game::MG, s=rand(initialstate(game)))
     return SearchTree(
         [s],
         Matrix{Int}[NO_CHILDREN],
-        Matrix{Int}[NO_CHILDREN],
-        [0],
+        Matrix{Float64}[NO_COUNTS],
+        [0.0],
         ([NO_PRIOR], [NO_PRIOR]),
         [Matrix{Float64}(undef, 0, 0)],
         [Matrix{Float64}(undef, 0, 0)],
@@ -103,16 +104,16 @@ function _expand_s!(tree::SearchTree, s_idx::Int, game::MG, oracle)
     end
 
     tree.s_children[s_idx] = s_children
-    tree.n_sa[s_idx] = zeros(Int, na1, na2)
-    tree.n_s[s_idx] = 0
+    tree.n_sa[s_idx] = zeros(Float64, na1, na2)
+    tree.n_s[s_idx] = 0.0
     tree.v[s_idx] = v
     tree.r[s_idx] = r
     reset_search_node!(tree, s_idx, na1, na2)
 
     append!(tree.s, frontier)
     append!(tree.s_children, fill(NO_CHILDREN, n_frontier))
-    append!(tree.n_sa, fill(NO_CHILDREN, n_frontier))
-    append!(tree.n_s, fill(0, n_frontier))
+    append!(tree.n_sa, fill(NO_COUNTS, n_frontier))
+    append!(tree.n_s, fill(0.0, n_frontier))
     append!(tree.v, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
     append!(tree.r, fill(Matrix{Float64}(undef, 0, 0), n_frontier))
     foreach(tree.prior) do prior_i
@@ -155,24 +156,35 @@ function prepare_transfer_regret!(::Plus, regret)
     return regret
 end
 
-function warmstart_node!(params::MCTSSearch, tree::SearchTree, s_idx::Int, game::MG; learned_reach::Real=1.0)
+function warmstart_node!(
+        params::MCTSSearch,
+        tree::SearchTree,
+        s_idx::Int,
+        game::MG;
+        learned_reach::Real=1.0,
+        value_prior=nothing,
+    )
     has_prior_transfer(params) || return nothing
     (r1, r2), (s1, s2) = mcts_prior(params, game, tree.s[s_idx], learned_reach)
+    prior_mass = params.prior_scale * clamp(Float64(learned_reach), 0.0, 1.0)
+    π1 = normalized_or_uniform(s1)
+    π2 = normalized_or_uniform(s2)
     tree.regret[1][s_idx] .= r1
     tree.regret[2][s_idx] .= r2
     tree.policy_sum[1][s_idx] .= s1
     tree.policy_sum[2][s_idx] .= s2
+    tree.n_s[s_idx] = prior_mass
+    tree.n_sa[s_idx] .= prior_mass .* (π1 * transpose(π2))
+    value_prior = isnothing(value_prior) ?
+        oracle_state_value(params.oracle, game, tree.s[s_idx]) : Float64(value_prior)
+    tree.return_sum[s_idx] = prior_mass * value_prior
     return nothing
 end
 
 function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int)
-    A1, A2 = actions(game)
-    na1, na2 = length(A1), length(A2)
-    if has_prior_transfer(params)
-        (_r1i, _r2i), (s1i, s2i) = mcts_prior(params, game, tree.s[s_idx])
-    else
-        s1i, s2i = zeros(na1), zeros(na2)
-    end
+    has_prior_transfer(params) && throw(ArgumentError(
+        "regret/strategy targets require prior_scale == 0; fitted priors are inference-only",
+    ))
     local_iterations = sum(tree.n_sa[s_idx])
     # Fit average regret so the inference prior has the paper's direct
     # cumulative initialization: prior_scale * R_bar. The first query expands
@@ -183,8 +195,8 @@ function mcts_root_targets(params::MCTSSearch, tree::SearchTree, game::MG, s_idx
         Float64.(tree.fresh_regret[2][s_idx]) ./ regret_denom,
     )
     ys = (
-        normalized_or_uniform(max.(Float64.(tree.policy_sum[1][s_idx]) .- s1i, 0.0)),
-        normalized_or_uniform(max.(Float64.(tree.policy_sum[2][s_idx]) .- s2i, 0.0)),
+        normalized_or_uniform(Float64.(tree.policy_sum[1][s_idx])),
+        normalized_or_uniform(Float64.(tree.policy_sum[2][s_idx])),
     )
     return yr, ys
 end
@@ -287,8 +299,8 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         return leaf_value
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, params.oracle)
-        warmstart_node!(params, tree, s_idx, game; learned_reach)
         leaf_value = oracle_state_value(params.oracle, game, s)
+        warmstart_node!(params, tree, s_idx, game; learned_reach, value_prior=leaf_value)
         add_return_sum!(tree, s_idx, leaf_value)
         tree.n_s[s_idx] += 1
         return leaf_value
