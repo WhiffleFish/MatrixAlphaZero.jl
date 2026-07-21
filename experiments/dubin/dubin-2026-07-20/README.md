@@ -54,3 +54,16 @@ julia --project=experiments \
   experiments/dubin/dubin-2026-07-20/ppo_solver_response_utilities.jl \
   --test
 ```
+
+After the six PPO response models are available, run the parallel 18-cell
+benchmark suite and render its LaTeX table with:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-20/benchmark_solver_matchups.jl \
+  --workers 6
+
+julia --project=experiments \
+  experiments/solver_benchmark_to_latex.jl \
+  experiments/dubin/dubin-2026-07-20/solver_benchmark_results
+```

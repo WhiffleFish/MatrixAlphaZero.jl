@@ -14,11 +14,13 @@ using SDAGames.SNRGame
 using SDAGames.SatelliteDynamics
 using Statistics
 
+include(joinpath(@__DIR__, "initial_state.jl"))
+
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
-const EXPERIMENT_NAME = "sda-2026-07-20"
-const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-100q-prior100"
-const SEARCH_NAME = "rm_plus_no_transfer_train"
+const EXPERIMENT_NAME = "sda-2026-07-21"
+const EXPERIMENT_GROUP = "$(EXPERIMENT_NAME)-rm-plus-no-transfer-train-mean-100q-prior100-leo-core-w64"
+const SEARCH_NAME = "rm_plus_no_transfer_train_mean_leo"
 const SEED = 0
 const SDAGAMES_TREE_SHA = "3b41ec411b327b4889cca64648a38d1b1aa7e47f"
 const EVAL_SEARCH_EPSILON = 0.1
@@ -55,11 +57,11 @@ eval_every = args["every"]
 inference_prior_scale = Float64(args["prior_scale"])
 tree_queries > 0 || throw(ArgumentError("tree_queries must be positive"))
 inference_tree_queries > 0 || throw(ArgumentError("inference_tree_queries must be positive"))
-0 <= inference_prior_scale <= tree_queries || throw(ArgumentError(
-    "prior_scale must be in [0, tree_queries] so the equivalent transfer weight is at most 1",
+0 <= inference_prior_scale <= inference_tree_queries || throw(ArgumentError(
+    "prior_scale must be in [0, inference_tree_queries] so the equivalent transfer weight is at most 1",
 ))
 
-width = 32
+width = 64
 lr = 3f-4
 lr_decay = 0.999f0
 lr_min = 1f-5
@@ -70,7 +72,7 @@ gae_lambda = 0.95
 epsilon_decay = 1 - 1e-3
 epsilon_schedule = t -> max(0.3 * epsilon_decay^(t - 1), 0.1)
 max_time = Inf
-backup = :sample
+backup = :mean
 value_target = :search
 value_weight = 1.0f0
 regret_weight = 0.1f0
@@ -90,31 +92,11 @@ critic_type = "scalar"
 end
 @everywhere Random.seed!($SEED + Distributed.myid())
 
-# Keep the July-10 2-D SDA task exactly: circular equatorial initial orbits with
-# independently sampled altitude and phase for observer and target.
-d_observer = ImplicitDistribution() do rng
-    SNRGame.sOSCtoCART2D([
-        R_EARTH + rand(rng, Distributions.Uniform(500e3, 1e7)),
-        0.0,
-        0.0,
-        rand(rng) * 2π,
-    ])
-end
-
-d_target = ImplicitDistribution() do rng
-    SNRGame.sOSCtoCART2D([
-        R_EARTH + rand(rng, Distributions.Uniform(500e3, 1e7)),
-        0.0,
-        0.0,
-        rand(rng) * 2π,
-    ])
-end
-
-game = SNRGameSimple(
-    observer=d_observer,
-    target=d_target,
-    altitude_bounds=(100e3, 2e7),
-)
+# Use one correlated LEO regime. The observer orbit is sampled relative to the
+# target, so all training and in-distribution evaluation must draw from this
+# joint distribution rather than from SNRGameSimple's independent marginals.
+game = SNRGameSimple(altitude_bounds=(100e3, 2e7))
+s0 = core_initialstate_distribution(game)
 na1, na2 = length.(actions(game))
 
 function state_network(width, output_dim)
@@ -338,7 +320,7 @@ jldsave(joinpath(@__DIR__, "oracle_$(SEARCH_NAME).jld2"); oracle)
 # A fixed state bank and explicit per-evaluation RNG seeds make every checkpoint
 # comparison use the same orbital configurations and reproducible search noise.
 eval_rng = MersenneTwister(1)
-eval_initialstates = [rand(eval_rng, initialstate(game)) for _ in 1:eval_runs]
+eval_initialstates = [rand(eval_rng, s0) for _ in 1:eval_runs]
 snr_features = map(eval_initialstates) do s
     Float64(MarkovGames.convert_s(Vector{Float32}, s, game)[16])
 end
@@ -373,6 +355,17 @@ wandb_config = Dict{String,Any}(
     "game/sdagames_tree_sha" => SDAGAMES_TREE_SHA,
     "game/state_features" => 16,
     "game/action_counts" => "$(na1)x$(na2)",
+    "game/initial_distribution" => CORE_DISTRIBUTION_NAME,
+    "game/target_altitude_min_km" => CORE_TARGET_ALTITUDE_BOUNDS[1] / 1e3,
+    "game/target_altitude_max_km" => CORE_TARGET_ALTITUDE_BOUNDS[2] / 1e3,
+    "game/relative_altitude_min_km" => CORE_RELATIVE_ALTITUDE_BOUNDS[1] / 1e3,
+    "game/relative_altitude_max_km" => CORE_RELATIVE_ALTITUDE_BOUNDS[2] / 1e3,
+    "game/abs_phase_separation_min_deg" =>
+        rad2deg(CORE_ABS_PHASE_SEPARATION_BOUNDS[1]),
+    "game/abs_phase_separation_max_deg" =>
+        rad2deg(CORE_ABS_PHASE_SEPARATION_BOUNDS[2]),
+    "game/orbits" => "circular_coplanar",
+    "game/observer_target_sampling" => "correlated",
     "search/name" => SEARCH_NAME,
     "search/type" => "MCTSSearch",
     "search/training_tree_queries" => search.tree_queries,
@@ -384,7 +377,9 @@ wandb_config = Dict{String,Any}(
     "search/training_prior_scale" => search.prior_scale,
     "inference/prior_scale" => inference_prior_scale,
     "inference/tree_queries" => inference_tree_queries,
-    "inference/equivalent_transfer_weight" => inference_prior_scale / tree_queries,
+    "inference/equivalent_transfer_weight" =>
+        inference_prior_scale / inference_tree_queries,
+    "inference/prior_components" => "regret_strategy_counts_value",
     "sim_depth" => sim_depth,
     "max_steps" => max_steps,
     "num_steps" => num_steps,
@@ -413,6 +408,8 @@ wandb_config = Dict{String,Any}(
     "eval_runs" => eval_runs,
     "eval_every" => eval_every,
     "eval/fixed_state_bank_seed" => 1,
+    "eval/distribution" => CORE_DISTRIBUTION_NAME,
+    "eval/benchmark_scope" => "in_distribution_only",
     "state_feature/snr_nonfinite" => snr_nonfinite,
     "state_feature/snr_min" => minimum(snr_finite),
     "state_feature/snr_median" => median(snr_finite),
@@ -443,6 +440,7 @@ callbacks = isnothing(wandb_cb) ?
     (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback(), stat_eval_cb) :
     (AZ.ModelSaveCallback(models_dir), AZ.MetricsCallback(), wandb_cb, stat_eval_cb)
 
-solve(solver, game; s0=initialstate(game), cb=callbacks)
+solve(solver, game; s0=s0, cb=callbacks)
 isnothing(wandb_cb) || close(wandb_cb)
 rmprocs(p)
+
