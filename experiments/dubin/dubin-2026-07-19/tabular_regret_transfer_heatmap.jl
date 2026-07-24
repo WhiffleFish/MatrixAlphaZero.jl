@@ -251,7 +251,7 @@ function parse_cli(args)
         "iterations" => 64,
         "probe_trials" => 8,
         "trials" => 32,
-        "leaf_errors" => [0.0, 0.025, 0.05, 0.10, 0.20, 0.40],
+        "leaf_errors" => [0.0, 0.20, 0.40, 0.60, 0.80, 1.00],
         "transfer_errors" => [0.0, 0.025, 0.05, 0.10, 0.20, 0.40],
         "epsilon" => 0.10,
         "seed" => 20260719,
@@ -305,7 +305,7 @@ function parse_cli(args)
     cfg["depth"] >= cfg["screen_depth"] > 0 || error("Require depth >= screen-depth > 0")
     cfg["iterations"] > 1 || error("iterations must exceed one")
     cfg["trials"] > 0 && cfg["probe_trials"] > 0 || error("trial counts must be positive")
-    all(e -> 0 <= e <= 0.5, cfg["leaf_errors"]) || error("leaf errors must be in [0, 0.5]")
+    all(e -> 0 <= e <= 1.0, cfg["leaf_errors"]) || error("leaf errors must be in [0, 1]")
     all(e -> 0 <= e <= 0.5, cfg["transfer_errors"]) || error("transfer errors must be in [0, 0.5]")
     0 <= cfg["epsilon"] <= 1 || error("epsilon must be in [0, 1]")
     return cfg
@@ -361,7 +361,6 @@ function corrupted_priors(
         source_regret,
         source_strategy,
         error::Float64,
-        source_iterations::Int,
         seed::Int,
     )
     rng = MersenneTwister(seed)
@@ -380,9 +379,9 @@ function corrupted_priors(
             exact = source_regret[i][player]
             predicted_average = regret_perturbation(rng, exact, error)
             max_regret_error = max(max_regret_error, maximum(abs.(predicted_average .- exact)))
-            # MCTSSearch multiplies the fitted vector by sqrt(source mass).
-            # Returning sqrt(T1) * average regret reconstructs T1 * average regret.
-            sqrt(source_iterations) .* predicted_average
+            # Current MCTSSearch multiplies average regret directly by
+            # prior_scale=T1 to reconstruct the transferred cumulative regret.
+            predicted_average
         end
         corrupted_s = ntuple(2) do player
             exact = source_strategy[i][player]
@@ -425,14 +424,14 @@ function run_node_search(
         max_depth=remaining_depth,
         search_style=AZ.RegretMatchingSearch(; backup=:sample, method=AZ.Plus()),
         ϵ=_ -> cfg["epsilon"],
-        τ=transfer ? Float64(iterations) : 0.0,
-        transfer_weight=transfer ? 1.0 : 0.0,
-        transfer_payoff_bound=Inf,
+        prior_scale=transfer ? Float64(iterations) : 0.0,
     )
     Random.seed!(seed)
     (_, _, _), info = AZ.search_info(search, tree.game, tree.states[node]; ϵ=cfg["epsilon"])
-    updates = sum(info.tree.n_sa[1])
-    updates == iterations || error("Expected $(iterations) root updates, observed $(updates)")
+    prior_updates = transfer ? iterations : 0
+    updates = sum(info.tree.n_sa[1]) - prior_updates
+    isapprox(updates, iterations; atol=1e-8, rtol=0.0) ||
+        error("Expected $(iterations) root updates, observed $(updates)")
     return info.tree
 end
 
@@ -512,7 +511,6 @@ function evaluate_transfer(tree, cfg, source, transfer_error, trial)
         source.average_regret,
         source.average_strategy,
         transfer_error,
-        cfg["iterations"],
         trial_seed + 2,
     )
     oracle = tabular_oracle(tree, exact_value_dict(tree); regrets, strategies)
@@ -686,7 +684,11 @@ function annotate_heatmap!(plot_handle, xs, ys, matrix; text_color="#1A1A1A")
             plot_handle,
             x,
             y,
-            text(@sprintf("%.3f", matrix[iy, ix]), 7, text_color, :center),
+            text(
+                @sprintf("%.2f", matrix[iy, ix]);
+                family="Computer Modern", pointsize=8, color=text_color,
+                halign=:center, valign=:center,
+            ),
         )
     end
     return plot_handle
@@ -725,11 +727,10 @@ function save_heatmaps(
     improvement_palette = cgrad(["#D98C82", "#F7F7F7", "#7FB3D1"], [0.0, 0.5, 1.0])
     p_transfer = heatmap(
         x_positions, y_positions, transferred;
-        xlabel=L"\mathrm{Leaf\ value\ error}\ \eta_V",
+        xlabel="",
         ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
-        title="(a) Nash gap after transfer", color=sequential_palette,
-        clims=(0, common_max),
-        colorbar_title=L"\mathrm{Nash\ gap}",
+        title="(a) Nash gap", color=sequential_palette,
+        clims=(0, common_max), colorbar=false,
         xlims=(0.5, length(x_positions) + 0.5),
         ylims=(0.5, length(y_positions) + 0.5),
         axis_ticks...,
@@ -739,9 +740,8 @@ function save_heatmaps(
         x_positions, y_positions, improvement;
         xlabel=L"\mathrm{Leaf\ value\ error}\ \eta_V",
         ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
-        title="(b) Reduction relative to ordinary RM+",
-        color=improvement_palette, clims=(-gain_max, gain_max),
-        colorbar_title=L"\mathrm{Nash\ gap\ reduction}",
+        title="(b) Gap reduction",
+        color=improvement_palette, clims=(-gain_max, gain_max), colorbar=false,
         xlims=(0.5, length(x_positions) + 0.5),
         ylims=(0.5, length(y_positions) + 0.5),
         axis_ticks...,
@@ -750,14 +750,13 @@ function save_heatmaps(
     add_cell_boundaries!(p_improvement, length(x_positions), length(y_positions))
     annotate_heatmap!(p_transfer, x_positions, y_positions, transferred)
     annotate_heatmap!(p_improvement, x_positions, y_positions, improvement)
-    baseline_label = @sprintf(
-        "Ordinary RM+ reference: %.3f ± %.3f SD", baseline_mean, baseline_std,
-    )
+    # Keep the ordinary RM+ reference in the paper caption rather than shrinking
+    # the two panels with an additional in-figure heading.
     figure = plot(
         p_transfer, p_improvement;
-        layout=(1, 2), size=(1250, 550), plot_title=baseline_label,
-        plot_titlefontsize=11, titlefontsize=11, guidefontsize=10,
-        tickfontsize=8, margin=6Plots.mm, bottom_margin=9Plots.mm,
+        layout=(2, 1), size=(280, 580),
+        titlefontsize=10, guidefontsize=9, tickfontsize=8,
+        margin=3Plots.mm, left_margin=5Plots.mm, bottom_margin=5Plots.mm,
     )
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.png"))
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.pdf"))

@@ -54,13 +54,13 @@ defender = (4.870235, 2.507612, -2.698290)
 
 Across 32 paired trials, ordinary RM+ on real leaf values had finite-tree Nash
 gap `0.2511 ± 0.0900` (mean and SD). With unperturbed source leaf values and
-exact regret/strategy transfer, the second solve reached `0.1514`, for a paired
-reduction of `0.0997 ± 0.0177` (mean and SEM). The ordinary reference is the
+exact regret/strategy transfer, the second solve reached `0.1504`, for a paired
+reduction of `0.1008 ± 0.0176` (mean and SEM). The ordinary reference is the
 same for every heatmap cell. Transfer error dominates degradation: at zero leaf
-error, transfer error `0.1` removes the mean benefit and larger errors are
-harmful. Random bounded leaf error alone has a smaller and non-monotone effect
-over this grid, as expected for zero-mean perturbations rather than an
-adversarial error construction.
+error, transfer error `0.1` leaves only a small mean benefit and larger errors
+are harmful. The leaf-error grid is `[0, 0.2, 0.4, 0.6, 0.8, 1.0]`. With exact
+regret/strategy transfer, gap rises to `0.1892` at leaf error `1.0`, reducing the
+mean benefit to `0.0620 ± 0.0223`.
 
 ## Run
 

@@ -1,0 +1,2 @@
+runs_per_orientation,total_rollouts,seat_balanced_regret_reward,approximate_stderr,approximate_z,approximate_ci95_lower,approximate_ci95_upper
+500,1000,1.3060774554602785,0.3876573869684144,3.369155277096663,0.5462689761021863,2.065885934818371

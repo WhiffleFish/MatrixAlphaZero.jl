@@ -130,22 +130,41 @@ end
 
 function has_prior_transfer(params::MCTSSearch)
     params.prior_scale >= 0 || throw(ArgumentError("prior_scale must be nonnegative"))
-    return params.prior_scale > 0
+    params.regret_prior_weight >= 0 ||
+        throw(ArgumentError("regret_prior_weight must be nonnegative"))
+    params.strategy_prior_weight >= 0 ||
+        throw(ArgumentError("strategy_prior_weight must be nonnegative"))
+    params.statistic_prior_weight >= 0 ||
+        throw(ArgumentError("statistic_prior_weight must be nonnegative"))
+    params.prior_reach_power >= 0 ||
+        throw(ArgumentError("prior_reach_power must be nonnegative"))
+    component_weight = params.regret_prior_weight +
+        params.strategy_prior_weight +
+        params.statistic_prior_weight
+    return params.prior_scale > 0 && component_weight > 0
 end
 
-# Inference warm start. The single scale has the wT₁ semantics from the fitted
-# transfer theory and is attenuated by the joint reach under the learned average
-# policy. RM+ clips negative fitted cumulative regrets before local updates.
+# Inference warm start. `prior_scale` has the wT₁ semantics from the fitted
+# transfer theory. Component weights permit deployment-time ablations without
+# changing the fitted oracle, while `prior_reach_power=1` preserves the original
+# attenuation by joint reach under the learned average policy.
+function effective_prior_mass(params::MCTSSearch, learned_reach::Real)
+    reach = clamp(Float64(learned_reach), 0.0, 1.0)
+    return params.prior_scale * reach^params.prior_reach_power
+end
+
 function mcts_prior(params::MCTSSearch, game::MG, s, learned_reach::Real=1.0)
     r̂ = state_regret(params.oracle, game, s)
     ŝ = state_strategy(params.oracle, game, s)
-    effective_scale = params.prior_scale * clamp(Float64(learned_reach), 0.0, 1.0)
-    r1 = effective_scale .* Float64.(r̂[1])
-    r2 = effective_scale .* Float64.(r̂[2])
+    prior_mass = effective_prior_mass(params, learned_reach)
+    regret_mass = prior_mass * params.regret_prior_weight
+    strategy_mass = prior_mass * params.strategy_prior_weight
+    r1 = regret_mass .* Float64.(r̂[1])
+    r2 = regret_mass .* Float64.(r̂[2])
     prepare_transfer_regret!(params.search_style.method, r1)
     prepare_transfer_regret!(params.search_style.method, r2)
-    s1 = effective_scale .* normalized_or_uniform(Float64.(ŝ[1]))
-    s2 = effective_scale .* normalized_or_uniform(Float64.(ŝ[2]))
+    s1 = strategy_mass .* normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = strategy_mass .* normalized_or_uniform(Float64.(ŝ[2]))
     return (r1, r2), (s1, s2)
 end
 
@@ -166,18 +185,20 @@ function warmstart_node!(
     )
     has_prior_transfer(params) || return nothing
     (r1, r2), (s1, s2) = mcts_prior(params, game, tree.s[s_idx], learned_reach)
-    prior_mass = params.prior_scale * clamp(Float64(learned_reach), 0.0, 1.0)
-    π1 = normalized_or_uniform(s1)
-    π2 = normalized_or_uniform(s2)
+    prior_mass = effective_prior_mass(params, learned_reach)
+    statistic_mass = prior_mass * params.statistic_prior_weight
+    strategy_prior = state_strategy(params.oracle, game, tree.s[s_idx])
+    π1 = normalized_or_uniform(Float64.(strategy_prior[1]))
+    π2 = normalized_or_uniform(Float64.(strategy_prior[2]))
     tree.regret[1][s_idx] .= r1
     tree.regret[2][s_idx] .= r2
     tree.policy_sum[1][s_idx] .= s1
     tree.policy_sum[2][s_idx] .= s2
-    tree.n_s[s_idx] = prior_mass
-    tree.n_sa[s_idx] .= prior_mass .* (π1 * transpose(π2))
+    tree.n_s[s_idx] = statistic_mass
+    tree.n_sa[s_idx] .= statistic_mass .* (π1 * transpose(π2))
     value_prior = isnothing(value_prior) ?
         oracle_state_value(params.oracle, game, tree.s[s_idx]) : Float64(value_prior)
-    tree.return_sum[s_idx] = prior_mass * value_prior
+    tree.return_sum[s_idx] = statistic_mass * value_prior
     return nothing
 end
 
@@ -364,7 +385,17 @@ end
 
 # Self-play for RegretMatchingSearch with a FittedRegretModel oracle. Training
 # uses prior_scale=0, so these are ordinary local RM regret/strategy targets.
-function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.30, sim_depth::Int=params.max_depth, gae_lambda=0.95)
+function mcts_regret_sim(
+        params::MCTSSearch,
+        game::MG,
+        s;
+        progress=false,
+        ϵ=0.30,
+        search_ϵ=ϵ,
+        action_ϵ=ϵ,
+        sim_depth::Int=params.max_depth,
+        gae_lambda=0.95,
+    )
     sim_depth > 0 || throw(ArgumentError("sim_depth must be positive"))
     use_search_targets = params.value_target == :search
     if !use_search_targets && params.value_target != :gae
@@ -383,12 +414,12 @@ function mcts_regret_sim(params::MCTSSearch, game::MG, s; progress=false, ϵ=0.3
 
     while (t <= sim_depth) && !isterminal(game, s)
         search_start = time()
-        (_x, _y, gv), info = search_info(params, game, s; ϵ)
+        (_x, _y, gv), info = search_info(params, game, s; ϵ=search_ϵ)
         yr, ys = mcts_root_targets(params, info.tree, game, 1)
         search_time = time() - search_start
 
-        x = eps_exploration(normalized_or_uniform(ys[1]), ϵ)
-        y = eps_exploration(normalized_or_uniform(ys[2]), ϵ)
+        x = eps_exploration(normalized_or_uniform(ys[1]), action_ϵ)
+        y = eps_exploration(normalized_or_uniform(ys[2]), action_ϵ)
         a_idxs = Tuple(action_idx_from_probs(x, y))
         a = (A1[a_idxs[1]], A2[a_idxs[2]])
         sp, r = @gen(:sp, :r)(game, s, a)

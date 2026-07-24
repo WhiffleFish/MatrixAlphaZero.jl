@@ -67,3 +67,58 @@ julia --project=experiments \
   experiments/solver_benchmark_to_latex.jl \
   experiments/dubin/dubin-2026-07-20/solver_benchmark_results
 ```
+
+## Regret-only deployment transfer
+
+`benchmark_regret_only_transfer.jl` evaluates the component-isolated warm start
+introduced after the SDA experiment. The exact cross-domain default is:
+
+- mean-backup RM+ search with 100 queries and depth 5;
+- search epsilon 0.1 and action epsilon 0.0;
+- raw fitted regret with `prior_scale=5`;
+- ordinary learned-policy reach attenuation;
+- zero average-strategy and count/value-statistic prior weights.
+
+Against the fixed Dubin heuristics, an independent 1,000-rollout validation
+found the scale-5 configuration effectively tied with value-only search:
+
+| search player | value only | regret only, scale 5 | delta |
+|---|---:|---:|---:|
+| attacker | 0.362 | 0.356 | -0.006 |
+| defender | 0.743 | 0.762 | +0.019 |
+
+The direct cross-play result is more favorable. Pooling two independent banks
+with 3,000 rollouts per seat, scale 5 has a seat-balanced advantage over
+value-only of `0.0285 +/- 0.0064`, with an approximate 95% interval of
+`[0.0160, 0.0409]`.
+
+A scale sweep found that Dubin tolerates larger regret mass. Scale 50 pooled to
+`0.0328 +/- 0.0063`, but it was worse than scale 5 on the larger independent
+2,000-per-seat confirmation bank. The difference between scales 5 and 50 is not
+stable enough to justify changing the portable default. Scale 5 is therefore
+the recommended setting unless a defender-weighted application is tuned
+separately.
+
+Run the heuristic scale screen:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-20/benchmark_regret_only_transfer.jl \
+  --runs 1000
+```
+
+Run value-only versus regret-only cross-play:
+
+```bash
+julia --project=experiments \
+  experiments/dubin/dubin-2026-07-20/benchmark_value_vs_regret_head_to_head.jl \
+  --runs 2000 \
+  --scales 5,50
+```
+
+The primary outputs are:
+
+- `regret_only_transfer_validation1000/heuristic_matchups.csv`
+- `value_vs_regret_head_to_head/matchups.csv`
+- `value_vs_regret_head_to_head_confirmation2000/matchups.csv`
+- `value_vs_regret_head_to_head_combined/summary.csv`

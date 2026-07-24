@@ -27,9 +27,15 @@ RegretMatchingSearch(backup::Symbol) = RegretMatchingSearch(; backup)
     # `:rollout` for its bootstrapped environment return.
     value_target    :: Symbol   = :search
     # Inference-only tree warm start. At a node with learned joint-policy reach
-    # q(h), regret, average strategy, visit counts, and value pseudo-observations
-    # receive mass prior_scale*q(h). Training requires this to remain zero.
+    # q(h), each transferred component receives mass
+    # prior_scale*q(h)^prior_reach_power times its component weight. The default
+    # weights preserve the original coupled warm start. Training requires
+    # prior_scale to remain zero.
     prior_scale     :: Float64  = 0.0
+    regret_prior_weight    :: Float64 = 1.0
+    strategy_prior_weight  :: Float64 = 1.0
+    statistic_prior_weight :: Float64 = 1.0
+    prior_reach_power      :: Float64 = 1.0
 end
 
 function with_oracle(search::MCTSSearch, oracle; kwargs...)
@@ -42,6 +48,10 @@ function with_oracle(search::MCTSSearch, oracle; kwargs...)
         oracle,
         value_target = search.value_target,
         prior_scale = search.prior_scale,
+        regret_prior_weight = search.regret_prior_weight,
+        strategy_prior_weight = search.strategy_prior_weight,
+        statistic_prior_weight = search.statistic_prior_weight,
+        prior_reach_power = search.prior_reach_power,
         kwargs...,
     )
 end

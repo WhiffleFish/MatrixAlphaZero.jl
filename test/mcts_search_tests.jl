@@ -180,6 +180,34 @@ end
     @test sum(reached_tree.n_sa[1]) ≈ prior_scale * 0.25
     @test reached_tree.return_sum[1] == prior_scale * 0.25 * 2.0
 
+    # Deployment-time component weights can isolate fitted regret from the
+    # strategy and count/value pseudo-observations.
+    regret_only_params = AZ.MCTSSearch(
+        tree_queries=0,
+        max_depth=2,
+        prior_scale=prior_scale,
+        regret_prior_weight=0.5,
+        strategy_prior_weight=0.0,
+        statistic_prior_weight=0.0,
+        prior_reach_power=0.0,
+        oracle=transfer_oracle,
+        search_style=AZ.RegretMatchingSearch(method=AZ.Plus()),
+    )
+    regret_only_tree = AZ.Tree(regret_only_params, game, false)
+    AZ.expand_s!(regret_only_tree, 1, game, transfer_oracle)
+    AZ.warmstart_node!(
+        regret_only_params,
+        regret_only_tree,
+        1,
+        game;
+        learned_reach=0.0,
+    )
+    @test regret_only_tree.regret[1][1] ≈ (0.5 * prior_scale) .* [0.8, 0.0]
+    @test all(iszero, regret_only_tree.policy_sum[1][1])
+    @test regret_only_tree.n_s[1] == 0.0
+    @test all(iszero, regret_only_tree.n_sa[1])
+    @test regret_only_tree.return_sum[1] == 0.0
+
     plus_params = AZ.MCTSSearch(
         tree_queries=0,
         max_depth=2,
@@ -219,6 +247,13 @@ end
 
     invalid = AZ.MCTSSearch(; tree_queries=0, prior_scale=-1.0, oracle=transfer_oracle)
     @test_throws ArgumentError AZ.has_prior_transfer(invalid)
+    invalid_weight = AZ.MCTSSearch(
+        tree_queries=0,
+        prior_scale=1.0,
+        regret_prior_weight=-1.0,
+        oracle=transfer_oracle,
+    )
+    @test_throws ArgumentError AZ.has_prior_transfer(invalid_weight)
 
     # End-to-end regret self-play emits regret/strategy targets of correct shape
     # and honors the configured value-supervision source.
@@ -243,6 +278,20 @@ end
         gae_lambda=1.0,
     )
     @test only(search_hist.v) ≈ expected_search_value
+
+    # Environment action exploration can be raised without changing the
+    # exploration used to construct the local search target.
+    Random.seed!(11)
+    separate_epsilon_hist = AZ.mcts_regret_sim(
+        sim_params,
+        game,
+        false;
+        search_ϵ=0.1,
+        action_ϵ=0.9,
+        sim_depth=1,
+        gae_lambda=1.0,
+    )
+    @test only(separate_epsilon_hist.v) ≈ expected_search_value
 
     gae_params = AZ.with_oracle(sim_params, transfer_oracle; value_target=:gae)
     Random.seed!(11)

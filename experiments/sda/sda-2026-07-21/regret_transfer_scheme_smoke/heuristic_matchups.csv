@@ -1,0 +1,5 @@
+name,source,transform,scale,threshold,exponent,clip,reach_power,regret_weight,strategy_weight,statistic_weight,search_player,runs,reward,stderr_reward,mean_steps,detection_rate,target_escaped_rate,observer_lost_rate,queries,max_depth,max_steps,search_epsilon,action_epsilon,elapsed_seconds,delta_vs_value_only
+value_only,baseline,raw,0.0,0.0,1.0,,1.0,0.0,0.0,0.0,1,2,0.0,0.0,3.0,0.0,0.0,0.0,2,2,3,0.1,0.0,1.550898875,0.0
+value_only,baseline,raw,0.0,0.0,1.0,,1.0,0.0,0.0,0.0,2,2,0.0,0.0,3.0,0.0,0.0,0.0,2,2,3,0.1,0.0,0.000725417,0.0
+baseline_raw_s1.0,baseline,raw,1.0,0.0,1.0,,1.0,1.0,0.0,0.0,1,2,0.0,0.0,3.0,0.0,0.0,0.0,2,2,3,0.1,0.0,0.001058625,0.0
+baseline_raw_s1.0,baseline,raw,1.0,0.0,1.0,,1.0,1.0,0.0,0.0,2,2,0.0,0.0,3.0,0.0,0.0,0.0,2,2,3,0.1,0.0,0.00089875,0.0
