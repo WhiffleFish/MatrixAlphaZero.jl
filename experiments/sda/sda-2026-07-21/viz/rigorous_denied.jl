@@ -90,28 +90,17 @@ end
     end
 end
 
-using Statistics, Plots, ProgressMeter, JLD2
-default(grid=false, framestyle=:box, fontfamily="Computer Modern", label="")
+# NOTE: this script does COMPUTE ONLY — it never loads Plots/GR. Rendering a
+# multi-frame animation with GR on a headless server is what segfaulted; here we
+# just save the (small) raw arrays and render the gif locally afterward with
+# plot_denied.jl. Keeps the server-side footprint tiny.
+using Statistics, ProgressMeter, JLD2
 include(joinpath(EXPDIR, "initial_state.jl"))
 
 feat(s) = MarkovGames.convert_s(Vector{Float32}, s, game)
 make_state(; ra, sp, φ, tak=900.0) = SNRGame.SDAState2D(
     SNRGame.sOSCtoCART2D([R_EARTH+(tak+ra)*1e3,0.0,0.0,mod2pi(φ+deg2rad(sp))]),
     SNRGame.sOSCtoCART2D([R_EARTH+tak*1e3,0.0,0.0,φ]), game.epc0, false)
-
-# light 3x3 smoothing (edge-replicated) for display only; raw arrays are saved
-function smooth3(A)
-    m, n = size(A); B = similar(A, Float64)
-    for j in 1:n, i in 1:m
-        acc = 0.0; c = 0
-        for dj in -1:1, di in -1:1
-            ii = clamp(i+di, 1, m); jj = clamp(j+dj, 1, n)
-            acc += A[ii, jj]; c += 1
-        end
-        B[i, j] = acc / c
-    end
-    return B
-end
 
 sep_ax = LinRange(-140, 140, NSEP)
 alt_ax = LinRange(-500, 500, NALT)
@@ -142,36 +131,14 @@ println("finished ", ntasks, " batches in ", round((time()-tstart)/60; digits=2)
 Vpass = [reshape(Vpass_flat[(k-1)*npix+1 : k*npix], NALT, NSEP) for k in 1:NFRAMES]
 denied = [Vpass[k] .- Veq[k] for k in 1:NFRAMES]
 
-# save raw arrays so any re-plot / re-smooth is free (no re-run)
-jldsave(joinpath(FIGDIR, "rigorous_denied_sweep.jld2");
+# Save raw arrays only. Render locally with plot_denied.jl (see below).
+outpath = joinpath(FIGDIR, "rigorous_denied_sweep.jld2")
+jldsave(outpath;
     sep_ax=collect(sep_ax), alt_ax=collect(alt_ax), phis=φs, Veq, Vpass, denied,
     eps=EPS, nframes=NFRAMES)
-
-# global color scales for a stable animation
 vhi = maximum(m -> maximum(m), vcat(Veq, Vpass))
 dhi = maximum(m -> maximum(abs, m), denied)
-
-function frame_plot(k)
-    φdeg = round(Int, rad2deg(φs[k]))
-    p1 = heatmap(sep_ax, alt_ax, Veq[k], c=:magma, clims=(0,vhi),
-                 title="equilibrium V (net)", xlabel="Δν (deg)", ylabel="Δa (km)")
-    p2 = heatmap(sep_ax, alt_ax, smooth3(Vpass[k]), c=:magma, clims=(0,vhi),
-                 title="V vs passive target", xlabel="Δν (deg)")
-    p3 = heatmap(sep_ax, alt_ax, smooth3(denied[k]), c=:thermal, clims=(0,dhi),
-                 title="opportunity denied by evasion", xlabel="Δν (deg)")
-    plot(p1, p2, p3, layout=(1,3), size=(1450, 470), bottom_margin=6Plots.mm,
-         left_margin=6Plots.mm, plot_title="orbital position $(φdeg)° from Sun")
-end
-
-if NFRAMES == 1
-    frame_plot(1); savefig(joinpath(FIGDIR, "rigorous_denied_frame.png"))
-    println("wrote rigorous_denied_frame.png")
-else
-    anim = @animate for k in 1:NFRAMES
-        frame_plot(k)
-    end
-    gif(anim, joinpath(FIGDIR, "rigorous_denied_sweep.gif"), fps=8)
-    println("wrote rigorous_denied_sweep.gif")
-end
-println("Vpass max=", round(vhi;digits=1), "  denied max=", round(dhi;digits=1))
+println("wrote ", outpath, "  |  Vpass max=", round(vhi;digits=1),
+        "  denied max=", round(dhi;digits=1))
+println("render locally with:  julia plot_denied.jl")
 rmprocs(workers())
