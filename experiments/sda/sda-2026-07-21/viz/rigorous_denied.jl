@@ -41,6 +41,10 @@ function parse_args_cli()
             help = "rollout episodes averaged per grid cell"
             arg_type = Int
             default = 4
+        "--outfile"
+            help = "output .jld2 path for the raw arrays"
+            arg_type = String
+            default = joinpath(FIGDIR, "rigorous_denied_sweep.jld2")
     end
     return parse_args(s)
 end
@@ -51,6 +55,15 @@ const NFRAMES  = ARGS_CLI["nframes"]
 const NSEP     = ARGS_CLI["nsep"]
 const NALT     = ARGS_CLI["nalt"]
 const EPS      = ARGS_CLI["eps"]
+const OUTFILE  = abspath(ARGS_CLI["outfile"])
+
+# Create (and prove writable) the output dir BEFORE the long compute, so a
+# 70-min run is never lost to a missing directory again.
+mkpath(dirname(OUTFILE))
+let probe = OUTFILE * ".writetest"
+    write(probe, "ok"); rm(probe)
+end
+println("output will be written to: ", OUTFILE)
 
 addprocs(NWORKERS)
 
@@ -131,14 +144,25 @@ println("finished ", ntasks, " batches in ", round((time()-tstart)/60; digits=2)
 Vpass = [reshape(Vpass_flat[(k-1)*npix+1 : k*npix], NALT, NSEP) for k in 1:NFRAMES]
 denied = [Vpass[k] .- Veq[k] for k in 1:NFRAMES]
 
-# Save raw arrays only. Render locally with plot_denied.jl (see below).
-outpath = joinpath(FIGDIR, "rigorous_denied_sweep.jld2")
-jldsave(outpath;
-    sep_ax=collect(sep_ax), alt_ax=collect(alt_ax), phis=φs, Veq, Vpass, denied,
-    eps=EPS, nframes=NFRAMES)
+# Save raw arrays only. Render locally with plot_denied.jl.
+function save_arrays(path)
+    mkpath(dirname(path))
+    jldsave(path;
+        sep_ax=collect(sep_ax), alt_ax=collect(alt_ax), phis=φs, Veq, Vpass, denied,
+        eps=EPS, nframes=NFRAMES)
+    return path
+end
+saved = try
+    save_arrays(OUTFILE)
+catch err
+    fallback = joinpath(homedir(), "rigorous_denied_sweep.jld2")
+    @warn "primary save to $(OUTFILE) failed ($(err)); writing fallback" fallback
+    save_arrays(fallback)
+end
+
 vhi = maximum(m -> maximum(m), vcat(Veq, Vpass))
 dhi = maximum(m -> maximum(abs, m), denied)
-println("wrote ", outpath, "  |  Vpass max=", round(vhi;digits=1),
+println("wrote ", saved, "  |  Vpass max=", round(vhi;digits=1),
         "  denied max=", round(dhi;digits=1))
-println("render locally with:  julia plot_denied.jl")
+println("render locally with:  julia plot_denied.jl --infile ", saved)
 rmprocs(workers())
