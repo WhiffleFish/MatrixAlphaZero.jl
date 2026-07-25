@@ -24,7 +24,7 @@ function usage()
       --problem NAME   Problem name used in the caption (inferred from DATA_DIR)
       --caption TEXT   Override the complete table caption
       --label LABEL    LaTeX label (default: tab:<problem>-solver-benchmarks)
-      --digits N       Digits after the decimal point (default: 3)
+      --digits N       Digits after the decimal point (default: 2)
       --help           Show this message
     """)
 end
@@ -38,7 +38,7 @@ function parse_args(args)
         "problem" => "",
         "caption" => "",
         "label" => "",
-        "digits" => "3",
+        "digits" => "2",
     )
     i = 2
     while i <= length(args)
@@ -144,6 +144,9 @@ function make_table(cfg)
         "\\centering",
         "\\caption{$(cfg.caption)}",
         "\\label{$(cfg.label)}",
+        "\\begingroup",
+        "\\small",
+        "\\setlength{\\tabcolsep}{2pt}",
         "\\begin{tabular}{@{}lccc@{}}",
         "\\toprule",
     ]
@@ -153,6 +156,7 @@ function make_table(cfg)
     append!(lines, [
         "\\bottomrule",
         "\\end{tabular}",
+        "\\endgroup",
         "\\end{table}",
     ])
     return join(lines, '\n') * "\n"

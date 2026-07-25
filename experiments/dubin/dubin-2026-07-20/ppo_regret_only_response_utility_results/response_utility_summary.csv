@@ -1,0 +1,2 @@
+solver,response_p1_reward,response_p1_stderr,response_p2_reward,response_p2_stderr,response_utility_sum,response_utility_sum_stderr
+full_solver,-0.5556632052494211,0.020245919202300105,0.07508375002838295,0.05760784595708124,-0.4805794552210382,0.061061945270035944

@@ -27,6 +27,15 @@ using Base.Threads
 
 const AZ = MatrixAlphaZero
 const SCRIPT_DIR = @__DIR__
+# AAAI uses a 7 in two-column text block with a 0.375 in gutter, hence a
+# 3.3125 in = 238.5 bp column. Plots/GR accepts only integer output dimensions,
+# so 238 bp is the closest width that cannot overrun \linewidth. GR treats its
+# requested "point size" as character height rather than the em size used by
+# TeX. With GR's 1.08 conversion and Computer Modern's 0.683 cap-height ratio,
+# 6 renders within 0.35 pt of the cap height of AAAI's 10 pt body text.
+const AAAI_COLUMN_WIDTH_BP = 238
+const AAAI_BODY_PLOTS_POINTSIZE = 6
+const AAAI_FIGURE_HEIGHT_BP = 493
 
 struct DepthState
     inner::JointDubinState
@@ -686,7 +695,8 @@ function annotate_heatmap!(plot_handle, xs, ys, matrix; text_color="#1A1A1A")
             y,
             text(
                 @sprintf("%.2f", matrix[iy, ix]);
-                family="Computer Modern", pointsize=8, color=text_color,
+                family="Computer Modern", pointsize=AAAI_BODY_PLOTS_POINTSIZE,
+                color=text_color,
                 halign=:center, valign=:center,
             ),
         )
@@ -728,7 +738,7 @@ function save_heatmaps(
     p_transfer = heatmap(
         x_positions, y_positions, transferred;
         xlabel="",
-        ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
+        ylabel=L"\mathrm{Transfer\ error}\ \delta_R=\delta_\sigma",
         title="(a) Nash gap", color=sequential_palette,
         clims=(0, common_max), colorbar=false,
         xlims=(0.5, length(x_positions) + 0.5),
@@ -738,8 +748,8 @@ function save_heatmaps(
     gain_max = max(maximum(abs, improvement), eps())
     p_improvement = heatmap(
         x_positions, y_positions, improvement;
-        xlabel=L"\mathrm{Leaf\ value\ error}\ \eta_V",
-        ylabel=L"\mathrm{Transfer\ error}\ \eta_R=\eta_\sigma",
+        xlabel=L"\mathrm{Leaf\ value\ error}\ \delta_V",
+        ylabel=L"\mathrm{Transfer\ error}\ \delta_R=\delta_\sigma",
         title="(b) Gap reduction",
         color=improvement_palette, clims=(-gain_max, gain_max), colorbar=false,
         xlims=(0.5, length(x_positions) + 0.5),
@@ -754,8 +764,10 @@ function save_heatmaps(
     # the two panels with an additional in-figure heading.
     figure = plot(
         p_transfer, p_improvement;
-        layout=(2, 1), size=(280, 580),
-        titlefontsize=10, guidefontsize=9, tickfontsize=8,
+        layout=(2, 1), size=(AAAI_COLUMN_WIDTH_BP, AAAI_FIGURE_HEIGHT_BP),
+        titlefontsize=AAAI_BODY_PLOTS_POINTSIZE,
+        guidefontsize=AAAI_BODY_PLOTS_POINTSIZE,
+        tickfontsize=AAAI_BODY_PLOTS_POINTSIZE,
         margin=3Plots.mm, left_margin=5Plots.mm, bottom_margin=5Plots.mm,
     )
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.png"))

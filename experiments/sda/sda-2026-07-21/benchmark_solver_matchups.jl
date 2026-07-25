@@ -3,23 +3,15 @@ using Serialization
 include("ppo_solver_response_utilities.jl")
 
 const BENCHMARK_COLUMNS = ("uniform_random", "heuristic", "ppo_br")
-const BASE_PPO_RESULTS_DIR =
-    joinpath(EXPERIMENT_DIR, "ppo_solver_response_utility_results")
-const TRANSFER_PPO_RESULTS_DIR =
-    joinpath(EXPERIMENT_DIR, "ppo_regret_only_response_utility_results")
-const BASE_BENCHMARK_RESULTS_DIR = normpath(joinpath(
-    EXPERIMENT_DIR,
-    "..",
-    "dubin-2026-07-16",
-    "solver_benchmark_results",
-))
+const PPO_RESULTS_DIR =
+    joinpath(EXPERIMENT_DIR, "ppo_solver_response_utility_results_regret_only")
 const BENCHMARK_CONTEXT_CACHE = Dict{String,Any}()
 
 function parse_benchmark_args(args)
-    raw = Dict{String,String}(
+    cfg = Dict{String,String}(
         "runs" => "500",
-        "max-steps" => string(MAX_PPO_STEPS),
-        "seed" => "20260720",
+        "max-steps" => "50",
+        "seed" => "20260721",
         "iter" => "latest",
         "output-dir" =>
             joinpath(EXPERIMENT_DIR, "solver_benchmark_regret_only_results"),
@@ -32,58 +24,47 @@ function parse_benchmark_args(args)
     while i <= length(args)
         key = args[i]
         startswith(key, "--") || error("Expected --key, got $(key)")
-        option = key[3:end]
-        haskey(raw, option) || error("Unknown option $(key)")
-        if option == "test"
-            raw[option] = "true"
+        opt = key[3:end]
+        haskey(cfg, opt) || error("Unknown option $(key)")
+        if opt == "test"
+            cfg[opt] = "true"
             i += 1
             continue
         end
         i += 1
         i <= length(args) || error("Missing value for $(key)")
-        raw[option] = args[i]
+        cfg[opt] = args[i]
         i += 1
     end
-    cfg = (;
-        runs=parse(Int, raw["runs"]),
-        max_steps=parse(Int, raw["max-steps"]),
-        seed=parse(Int, raw["seed"]),
-        iter=raw["iter"],
-        output_dir=abspath(raw["output-dir"]),
-        workers=parse(Int, raw["workers"]),
-        worker_jobs=raw["worker-jobs"],
-        worker_output=raw["worker-output"],
-        test=parse(Bool, raw["test"]),
+    parsed = (;
+        runs=parse(Int, cfg["runs"]),
+        max_steps=parse(Int, cfg["max-steps"]),
+        seed=parse(Int, cfg["seed"]),
+        iter=cfg["iter"],
+        output_dir=abspath(cfg["output-dir"]),
+        workers=parse(Int, cfg["workers"]),
+        worker_jobs=cfg["worker-jobs"],
+        worker_output=cfg["worker-output"],
+        test=parse(Bool, cfg["test"]),
     )
-    cfg.runs > 0 || error("--runs must be positive")
-    0 < cfg.max_steps <= MAX_PPO_STEPS ||
-        error("--max-steps must be in 1:$(MAX_PPO_STEPS)")
-    cfg.workers >= 0 || error("--workers must be nonnegative")
-    return cfg.test ? merge(cfg, (; runs=2)) : cfg
+    parsed.runs > 0 || error("--runs must be positive")
+    parsed.max_steps > 0 || error("--max-steps must be positive")
+    parsed.workers >= 0 || error("--workers must be nonnegative")
+    return parsed.test ? merge(parsed, (; runs=2)) : parsed
 end
 
 function uniform_player_policy(game, player::Int)
     n = length(actions(game)[player])
-    probabilities = fill(inv(n), n)
-    return Tools.FunctionPlayerPolicy(
-        game,
-        player,
-        (_game, _state) -> probabilities,
-    )
+    probs = fill(inv(n), n)
+    return Tools.FunctionPlayerPolicy(game, player, (_game, _state) -> probs)
 end
 
-function heuristic_player_policy(game, player::Int)
-    return isone(player) ?
-        DubinTools.dubin_attacker_heuristic(game) :
-        DubinTools.dubin_defender_heuristic(game)
-end
+heuristic_player_policy(game, player::Int) =
+    Tools.sda_no_burn_heuristic(game, player)
 
 function ppo_model_path(solver::AbstractString, player::Int)
-    results_dir = solver == "full_solver" ?
-        TRANSFER_PPO_RESULTS_DIR :
-        BASE_PPO_RESULTS_DIR
     return joinpath(
-        results_dir,
+        PPO_RESULTS_DIR,
         solver,
         "p$(player)",
         "ppo_response_actor_critic.jld2",
@@ -121,8 +102,14 @@ function joint_matchup(tree_policy, opponent_policy, tree_player::Int)
         Tools.JointPolicy(opponent_policy, tree_policy)
 end
 
-function evaluate_matchup(game, joint_policy, tree_player::Int, initialstates, cfg)
-    # Each cell in a player table receives the same action-sampling stream.
+function evaluate_matchup(
+        game,
+        joint_policy,
+        tree_player::Int,
+        initialstates,
+        cfg,
+    )
+    # Use the same sampling stream for every cell in a player table.
     Random.seed!(cfg.seed + 1_000 * tree_player)
     result = Tools.evaluate_joint_policy(
         game,
@@ -148,34 +135,16 @@ function write_benchmark_table(path, values)
     return path
 end
 
-function read_benchmark_table(path)
-    data, header = readdlm(path, ',', Any, '\n'; header=true)
-    String.(vec(header)) == ["solver"; collect(BENCHMARK_COLUMNS)] ||
-        error("Unexpected columns in $(path)")
-    return Dict(
-        String(data[row, 1]) => Float64.(data[row, 2:end])
-        for row in axes(data, 1)
-    )
-end
-
-function base_player_tables(tree_player::Int)
-    utilities = read_benchmark_table(joinpath(
-        BASE_BENCHMARK_RESULTS_DIR,
-        "player$(tree_player)_utilities.csv",
-    ))
-    stderrs = read_benchmark_table(joinpath(
-        BASE_BENCHMARK_RESULTS_DIR,
-        "player$(tree_player)_stderrs.csv",
-    ))
-    return utilities, stderrs
-end
-
 function benchmark_context(cfg)
     key = "$(cfg.iter)|$(cfg.test)"
     return get!(BENCHMARK_CONTEXT_CACHE, key) do
-        game = DubinMG(V=(1.0, 1.0))
-        oracle, _, checkpoint = load_checkpoint_oracle(cfg.iter)
-        solver_cfg = parse_args(cfg.test ? ["--test"] : String[])
+        game = make_game()
+        value_oracle, _, checkpoint = load_checkpoint_oracle(cfg.iter)
+        transfer_oracle = load_regret_refit(value_oracle)
+        oracle = (; value=value_oracle, transfer=transfer_oracle)
+        solver_cfg = parse_args(String[])
+        solver_cfg = merge(solver_cfg, (; iter=cfg.iter))
+        cfg.test && (solver_cfg = merge(solver_cfg, (; tree_queries=2, max_depth=2)))
         return (; game, oracle, solver_cfg, checkpoint)
     end
 end
@@ -204,8 +173,7 @@ function run_benchmark_job(job, initialstates, cfg)
 end
 
 function run_benchmark_jobs(jobs, initialstates, cfg)
-    cfg.workers == 0 &&
-        return map(job -> run_benchmark_job(job, initialstates, cfg), jobs)
+    cfg.workers == 0 && return map(job -> run_benchmark_job(job, initialstates, cfg), jobs)
     worker_count = min(cfg.workers, length(jobs))
     groups = [collect(worker:worker_count:length(jobs)) for worker in 1:worker_count]
     return mktempdir() do temp_dir
@@ -213,7 +181,7 @@ function run_benchmark_jobs(jobs, initialstates, cfg)
         result_paths = String[]
         for (worker, indices) in enumerate(groups)
             result_path = joinpath(temp_dir, "worker$(worker).bin")
-            worker_args = [
+            args = [
                 Base.julia_cmd().exec;
                 "--project=$(dirname(Base.active_project()))";
                 abspath(@__FILE__);
@@ -225,20 +193,20 @@ function run_benchmark_jobs(jobs, initialstates, cfg)
                 "--worker-jobs"; join(indices, ",");
                 "--worker-output"; result_path;
             ]
-            cfg.test && push!(worker_args, "--test")
-            push!(processes, run(Cmd(worker_args); wait=false))
+            cfg.test && push!(args, "--test")
+            push!(processes, run(Cmd(args); wait=false))
             push!(result_paths, result_path)
         end
         foreach(wait, processes)
         failed = findall(process -> !success(process), processes)
-        isempty(failed) ||
-            error("Benchmark subprocesses failed: $(join(failed, ", "))")
+        isempty(failed) || error("Benchmark subprocesses failed: $(join(failed, ", "))")
         return reduce(vcat, [open(deserialize, path) for path in result_paths])
     end
 end
 
 function collect_player_tables(results, tree_player::Int)
-    utilities, stderrs = base_player_tables(tree_player)
+    utilities = Dict(solver => zeros(length(BENCHMARK_COLUMNS)) for solver in SOLVERS)
+    stderrs = Dict(solver => zeros(length(BENCHMARK_COLUMNS)) for solver in SOLVERS)
     for result in results
         result.tree_player == tree_player || continue
         column = findfirst(==(result.benchmark), BENCHMARK_COLUMNS)
@@ -250,16 +218,18 @@ end
 
 function main_benchmark(args)
     cfg = parse_benchmark_args(args)
-    initialstates = fill(initial_dubin_state(), cfg.runs)
+    game = make_game()
+    initialstate_rng = MersenneTwister(cfg.seed + 99)
+    initial_dist = core_initialstate_distribution(game)
+    initialstates = [rand(initialstate_rng, initial_dist) for _ in 1:cfg.runs]
     jobs = [
         (tree_player, solver, benchmark)
         for tree_player in (1, 2)
-        for solver in ("full_solver",)
-        for benchmark in ("ppo_br",)
+        for solver in SOLVERS
+        for benchmark in BENCHMARK_COLUMNS
     ]
     if !isempty(cfg.worker_jobs)
-        isempty(cfg.worker_output) &&
-            error("--worker-output is required with --worker-jobs")
+        isempty(cfg.worker_output) && error("--worker-output is required with --worker-jobs")
         indices = parse.(Int, split(cfg.worker_jobs, ','))
         results = map(index -> run_benchmark_job(jobs[index], initialstates, cfg), indices)
         open(cfg.worker_output, "w") do io
@@ -269,11 +239,8 @@ function main_benchmark(args)
     end
 
     mkpath(cfg.output_dir)
-    println("Evaluation state: fixed Dubin reference state")
-    println(
-        "Reusing all non-transfer/PPO cells from $(BASE_BENCHMARK_RESULTS_DIR); ",
-        "evaluating 2 changed full-solver/PPO matchups with $(cfg.workers) workers",
-    )
+    println("Evaluation state: shared $(CORE_DISTRIBUTION_NAME) state bank")
+    println("Evaluating 18 matchups with $(cfg.workers) worker processes")
     results = run_benchmark_jobs(jobs, initialstates, cfg)
 
     paths = String[]

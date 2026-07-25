@@ -8,11 +8,11 @@ different finite-tree Nash gaps.
 The experiment follows the error assumptions in
 `sim-az-paper/ideas/current/fitted-error-regret-transfer.tex`:
 
-- leaf-value errors are sampled uniformly from `[-ηV, ηV]`;
-- average-regret errors are sampled uniformly from `[-ηR, ηR]`;
+- leaf-value errors are sampled uniformly from `[-δV, δV]`;
+- average-regret errors are sampled uniformly from `[-δR, δR]`;
 - average-strategy errors are sampled uniformly from the intersection of the
-  probability simplex and the `L∞` box of radius `ησ`;
-- the heatmap uses one transfer-error axis with `ηR = ησ`.
+  probability simplex and the `L∞` box of radius `δσ`;
+- the heatmap uses one transfer-error axis with `δR = δσ`.
 
 ## Tabular source construction
 
@@ -28,8 +28,8 @@ All conditions use one common iteration budget `T`, with `T1 = T2 = T`:
 1. Ordinary RM+ runs `T2` local root updates from every node using real leaf
    values.
 2. The transfer source runs `T1` local root updates from every node using leaf
-   values perturbed uniformly within `[-ηV, ηV]`.
-3. Its average regrets and strategies are corrupted by `ηR = ησ`, installed as
+   values perturbed uniformly within `[-δV, δV]`.
+3. Its average regrets and strategies are corrupted by `δR = δσ`, installed as
    `T1` pseudo-iterations, and a fresh transferred solve runs another `T2`
    local root updates from every node using the real leaf values.
 

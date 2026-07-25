@@ -2,6 +2,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, "..", ".."))
 
 using DelimitedFiles
+using Distributions
 using ExperimentTools
 using Flux
 using JLD2
@@ -9,26 +10,32 @@ using MarkovGames
 using MatrixAlphaZero
 using POMDPs
 using POMDPTools
-using POSGModels.Dubin
-using POSGModels.StaticArrays
 using Random
+using SDAGames.SNRGame
+using SDAGames.SatelliteDynamics
+
+include(joinpath(@__DIR__, "initial_state.jl"))
 
 const AZ = MatrixAlphaZero
 const Tools = ExperimentTools
-const DubinTools = ExperimentTools.Dubin
 const EXPERIMENT_DIR = @__DIR__
-const SEARCH_NAME = "rm_plus_no_transfer_train"
+const SEARCH_NAME = "rm_plus_no_transfer_train_mean_leo"
+const DEFAULT_FITTED_MODELS = joinpath(
+    EXPERIMENT_DIR,
+    "regret_fit_results_softplus_long",
+    "models.jld2",
+)
 const CLEANRL_TREE_SHA = "f23b4c0783c380ab8337c244dbb2182e60e63387"
 const SOLVERS = ("zero_oracle", "value_oracle", "full_solver")
 const MAX_PPO_STEPS = 50
 
-# PPO is trained once for each player against three otherwise-identical
-# finite-depth RM+ planners. These are empirical response utilities, not exact
-# best responses or exact exploitability values.
+# PPO is trained once for each player against three otherwise-identical finite-
+# depth RM+ planners. These are empirical response utilities, not exact best
+# responses and not an exact exploitability calculation.
 #
-#   zero_oracle  : V(s)=0, uniform priors, no warm start
-#   value_oracle : learned V(s), uniform priors, no warm start
-#   full_solver  : learned V(s), regret-only warm start
+#   zero_oracle  : V(s)=0, uniform fallback policy, no transfer
+#   value_oracle : learned V(s), uniform fallback policy, no transfer
+#   full_solver  : learned V(s), scale-5 regret-only warm start
 
 struct ValueOnlySearchOracle{O}
     oracle::O
@@ -65,6 +72,10 @@ AZ.batch_state_regret(oracle::ValueOnlySearchOracle, game, states) = (
     zeros(Float32, oracle.na[2], length(states)),
 )
 
+function make_game()
+    return SNRGameSimple(altitude_bounds=(100e3, 2e7))
+end
+
 split_nonempty(s::AbstractString) =
     String.(filter(!isempty, strip.(split(s, ","))))
 
@@ -78,7 +89,7 @@ function parse_players(spec::AbstractString)
 end
 
 function parse_args(args)
-    raw = Dict{String,String}(
+    cfg = Dict{String,String}(
         "solvers" => join(SOLVERS, ","),
         "players" => "both",
         "iter" => "latest",
@@ -90,7 +101,7 @@ function parse_args(args)
         "num-minibatches" => "4",
         "update-epochs" => "4",
         "lr" => "2.5e-4",
-        "gamma" => "0.99",
+        "gamma" => "0.98",
         "gae-lambda" => "0.95",
         "clip-coef" => "0.2",
         "ent-coeff" => "0.01",
@@ -104,8 +115,8 @@ function parse_args(args)
         "max-depth" => "5",
         "epsilon" => "0.1",
         "prior-scale" => "5.0",
-        "seed" => "20260720",
-        "initial-state" => "reference",
+        "prior-reach-power" => "1.0",
+        "seed" => "20260721",
         "output-dir" => "auto",
         "fail-fast" => "false",
         "test" => "false",
@@ -115,62 +126,65 @@ function parse_args(args)
     while i <= length(args)
         key = args[i]
         startswith(key, "--") || error("Expected --key, got $(key)")
-        option = key[3:end]
-        haskey(raw, option) || error("Unknown option $(key)")
-        if option == "test"
-            raw[option] = "true"
+        opt = key[3:end]
+        haskey(cfg, opt) || error("Unknown option $(key)")
+        if opt == "test"
+            cfg[opt] = "true"
             i += 1
             continue
         end
         i += 1
         i <= length(args) || error("Missing value for $(key)")
-        raw[option] = args[i]
+        cfg[opt] = args[i]
         i += 1
     end
 
-    output_dir = raw["output-dir"] == "auto" ?
-        joinpath(EXPERIMENT_DIR, "ppo_regret_only_response_utility_results") :
-        abspath(raw["output-dir"])
-    solvers = split_nonempty(raw["solvers"])
+    output_dir = cfg["output-dir"] == "auto" ?
+        joinpath(
+            EXPERIMENT_DIR,
+            "ppo_solver_response_utility_results_regret_only",
+        ) :
+        abspath(cfg["output-dir"])
+    solvers = split_nonempty(cfg["solvers"])
     unknown = setdiff(solvers, collect(SOLVERS))
     isempty(unknown) || error(
         "Unknown solvers $(unknown); expected $(join(SOLVERS, ", "))",
     )
 
-    cfg = (;
+    parsed = (;
         solvers,
-        players=parse_players(raw["players"]),
-        iter=raw["iter"],
-        backup=Symbol(raw["backup"]),
-        value_target=Symbol(raw["value-target"]),
-        total_timesteps=parse(Int, raw["total-timesteps"]),
-        num_steps=parse(Int, raw["num-steps"]),
-        num_envs=parse(Int, raw["num-envs"]),
-        num_minibatches=parse(Int, raw["num-minibatches"]),
-        update_epochs=parse(Int, raw["update-epochs"]),
-        lr=parse(Float32, raw["lr"]),
-        gamma=parse(Float32, raw["gamma"]),
-        gae_lambda=parse(Float32, raw["gae-lambda"]),
-        clip_coef=parse(Float32, raw["clip-coef"]),
-        ent_coeff=parse(Float32, raw["ent-coeff"]),
-        v_coef=parse(Float32, raw["v-coef"]),
-        anneal_lr=parse(Bool, raw["anneal-lr"]),
-        normalize_advantages=parse(Bool, raw["normalize-advantages"]),
-        clip_value_loss=parse(Bool, raw["clip-value-loss"]),
-        max_steps=parse(Int, raw["max-steps"]),
-        eval_runs=parse(Int, raw["eval-runs"]),
-        tree_queries=parse(Int, raw["tree-queries"]),
-        max_depth=parse(Int, raw["max-depth"]),
-        epsilon=parse(Float64, raw["epsilon"]),
-        prior_scale=parse(Float64, raw["prior-scale"]),
-        seed=parse(Int, raw["seed"]),
-        initial_state=raw["initial-state"],
+        players=parse_players(cfg["players"]),
+        iter=cfg["iter"],
+        backup=Symbol(cfg["backup"]),
+        value_target=Symbol(cfg["value-target"]),
+        total_timesteps=parse(Int, cfg["total-timesteps"]),
+        num_steps=parse(Int, cfg["num-steps"]),
+        num_envs=parse(Int, cfg["num-envs"]),
+        num_minibatches=parse(Int, cfg["num-minibatches"]),
+        update_epochs=parse(Int, cfg["update-epochs"]),
+        lr=parse(Float32, cfg["lr"]),
+        gamma=parse(Float32, cfg["gamma"]),
+        gae_lambda=parse(Float32, cfg["gae-lambda"]),
+        clip_coef=parse(Float32, cfg["clip-coef"]),
+        ent_coeff=parse(Float32, cfg["ent-coeff"]),
+        v_coef=parse(Float32, cfg["v-coef"]),
+        anneal_lr=parse(Bool, cfg["anneal-lr"]),
+        normalize_advantages=parse(Bool, cfg["normalize-advantages"]),
+        clip_value_loss=parse(Bool, cfg["clip-value-loss"]),
+        max_steps=parse(Int, cfg["max-steps"]),
+        eval_runs=parse(Int, cfg["eval-runs"]),
+        tree_queries=parse(Int, cfg["tree-queries"]),
+        max_depth=parse(Int, cfg["max-depth"]),
+        epsilon=parse(Float64, cfg["epsilon"]),
+        prior_scale=parse(Float64, cfg["prior-scale"]),
+        prior_reach_power=parse(Float64, cfg["prior-reach-power"]),
+        seed=parse(Int, cfg["seed"]),
         output_dir,
-        fail_fast=parse(Bool, raw["fail-fast"]),
-        test=parse(Bool, raw["test"]),
+        fail_fast=parse(Bool, cfg["fail-fast"]),
+        test=parse(Bool, cfg["test"]),
     )
-    validate_config(cfg)
-    return cfg.test ? test_config(cfg) : cfg
+    validate_config(parsed)
+    return parsed.test ? test_config(parsed) : parsed
 end
 
 function validate_config(cfg)
@@ -181,11 +195,11 @@ function validate_config(cfg)
     cfg.max_depth >= 0 || error("--max-depth must be nonnegative")
     0 <= cfg.epsilon <= 1 || error("--epsilon must be in [0, 1]")
     cfg.prior_scale >= 0 || error("--prior-scale must be nonnegative")
+    cfg.prior_reach_power >= 0 ||
+        error("--prior-reach-power must be nonnegative")
     0 < cfg.max_steps <= MAX_PPO_STEPS || error(
-        "--max-steps must be in 1:$(MAX_PPO_STEPS)",
+        "--max-steps must be in 1:$(MAX_PPO_STEPS); this harness does not increase PPO's horizon above Dubin",
     )
-    cfg.initial_state in ("reference", "game") ||
-        error("--initial-state must be reference or game")
     batch_size = cfg.num_steps * cfg.num_envs
     cfg.total_timesteps >= batch_size || error(
         "--total-timesteps must be at least num-steps × num-envs = $(batch_size)",
@@ -197,7 +211,7 @@ function validate_config(cfg)
 end
 
 function test_config(cfg)
-    # Preserve the 50-step episode horizon in the smoke test.
+    # Keep max_steps unchanged: the smoke tests the same 50-step PPO wrapper.
     return merge(cfg, (;
         total_timesteps=64,
         num_steps=8,
@@ -214,16 +228,16 @@ function test_config(cfg)
 end
 
 function checkpoint_iteration(path::AbstractString)
-    match_result = match(r"oracle(\d+)\.jld2$", basename(path))
-    isnothing(match_result) && error("Cannot parse checkpoint iteration from $(path)")
-    return parse(Int, match_result.captures[1])
+    m = match(r"oracle(\d+)\.jld2$", basename(path))
+    isnothing(m) && error("Cannot parse checkpoint iteration from $(path)")
+    return parse(Int, m.captures[1])
 end
 
 function checkpoint_paths()
     models_dir = joinpath(EXPERIMENT_DIR, "models_$(SEARCH_NAME)")
     isdir(models_dir) || error("Missing model checkpoint directory: $(models_dir)")
     checkpoints = filter(
-        path -> occursin(r"oracle\d+\.jld2$", basename(path)),
+        p -> occursin(r"oracle\d+\.jld2$", basename(p)),
         readdir(models_dir; join=true),
     )
     isempty(checkpoints) && error("No oracle checkpoints found in $(models_dir)")
@@ -234,9 +248,9 @@ end
 function select_checkpoint(iter_spec::AbstractString)
     checkpoints = checkpoint_paths()
     iter_spec == "latest" && return last(checkpoints)
-    iteration = parse(Int, iter_spec)
-    matches = filter(path -> checkpoint_iteration(path) == iteration, checkpoints)
-    isempty(matches) && error("No checkpoint for iteration $(iteration)")
+    iter = parse(Int, iter_spec)
+    matches = filter(p -> checkpoint_iteration(p) == iter, checkpoints)
+    isempty(matches) && error("No checkpoint for iteration $(iter)")
     return only(matches)
 end
 
@@ -252,20 +266,35 @@ function load_checkpoint_oracle(iter_spec::AbstractString)
     return oracle, checkpoint_iteration(checkpoint), checkpoint
 end
 
-function initial_dubin_state()
-    return JointDubinState(
-        SA[1, 1, deg2rad(45)],
-        SA[8, 7, deg2rad(180)],
+softplus_refit_output(x) = Flux.softplus.(x)
+
+function with_softplus_output(actor)
+    actor isa Chain || error("Expected checkpoint regret actor to be a Flux.Chain")
+    return Chain(actor.layers..., softplus_refit_output)
+end
+
+function load_regret_refit(online_oracle, fitted_models_path=DEFAULT_FITTED_MODELS)
+    isfile(fitted_models_path) ||
+        error("Missing fitted regret models: $(fitted_models_path)")
+    fitted = JLD2.load(fitted_models_path)
+    refit = AZ.FittedRegretModel(
+        deepcopy(online_oracle.shared),
+        AZ.MultiActor(
+            with_softplus_output(deepcopy(online_oracle.regret_head[1])),
+            with_softplus_output(deepcopy(online_oracle.regret_head[2])),
+        ),
+        deepcopy(online_oracle.strategy_head),
+        deepcopy(online_oracle.critic);
+        value_weight=online_oracle.value_weight,
+        regret_weight=online_oracle.regret_weight,
+        strategy_weight=online_oracle.strategy_weight,
     )
+    Flux.loadmodel!(refit.regret_head[1], fitted["baseline_p1_state"])
+    Flux.loadmodel!(refit.regret_head[2], fitted["baseline_p2_state"])
+    return refit
 end
 
-function initialstate_dist(game, spec::AbstractString)
-    spec == "reference" && return Deterministic(initial_dubin_state())
-    spec == "game" && return initialstate(game)
-    error("Unsupported initial-state specification $(spec)")
-end
-
-function build_search(oracle, cfg; prior_scale::Real=0.0)
+function base_search(oracle, cfg)
     return AZ.MCTSSearch(;
         oracle,
         tree_queries=cfg.tree_queries,
@@ -276,40 +305,64 @@ function build_search(oracle, cfg; prior_scale::Real=0.0)
         ),
         value_target=cfg.value_target,
         ϵ=_ -> cfg.epsilon,
-        prior_scale=Float64(prior_scale),
-        regret_prior_weight=iszero(prior_scale) ? 0.0 : 1.0,
-        strategy_prior_weight=0.0,
-        statistic_prior_weight=0.0,
-        prior_reach_power=1.0,
     )
 end
 
-function solver_policy(solver::AbstractString, game, learned_oracle, cfg)
+function full_search(oracle, cfg)
+    return AZ.MCTSSearch(;
+        oracle,
+        tree_queries=cfg.tree_queries,
+        max_depth=cfg.max_depth,
+        search_style=AZ.RegretMatchingSearch(;
+            backup=cfg.backup,
+            method=AZ.Plus(),
+        ),
+        value_target=cfg.value_target,
+        ϵ=_ -> cfg.epsilon,
+        prior_scale=cfg.prior_scale,
+        regret_prior_weight=1.0,
+        strategy_prior_weight=0.0,
+        statistic_prior_weight=0.0,
+        prior_reach_power=cfg.prior_reach_power,
+    )
+end
+
+function solver_policy(solver::AbstractString, game, learned_oracles, cfg)
     if solver == "zero_oracle"
-        oracle = Tools.ZeroSearchOracle(game)
-        search = build_search(oracle, cfg)
+        search = base_search(Tools.ZeroSearchOracle(game), cfg)
         meta = (;
             oracle_kind="uniform_zero",
             uses_value_oracle=false,
             uses_transfer=false,
             prior_scale=0.0,
+            regret_prior_weight=0.0,
+            strategy_prior_weight=0.0,
+            statistic_prior_weight=0.0,
         )
     elseif solver == "value_oracle"
-        oracle = ValueOnlySearchOracle(game, learned_oracle)
-        search = build_search(oracle, cfg)
+        search = base_search(
+            ValueOnlySearchOracle(game, learned_oracles.value),
+            cfg,
+        )
         meta = (;
             oracle_kind="learned_value_only",
             uses_value_oracle=true,
             uses_transfer=false,
             prior_scale=0.0,
+            regret_prior_weight=0.0,
+            strategy_prior_weight=0.0,
+            statistic_prior_weight=0.0,
         )
     elseif solver == "full_solver"
-        search = build_search(learned_oracle, cfg; prior_scale=cfg.prior_scale)
+        search = full_search(learned_oracles.transfer, cfg)
         meta = (;
             oracle_kind="learned_value_regret_only",
             uses_value_oracle=true,
-            uses_transfer=!iszero(cfg.prior_scale),
+            uses_transfer=true,
             prior_scale=cfg.prior_scale,
+            regret_prior_weight=1.0,
+            strategy_prior_weight=0.0,
+            statistic_prior_weight=0.0,
         )
     else
         error("Unsupported solver $(solver)")
@@ -355,7 +408,7 @@ function rollout_eval(game, joint_policy, initialstates; runs::Int, max_steps::I
         show_progress=false,
         proc_warn=false,
         parallel=false,
-        accumulators=(StepCount(), DubinTools.DubinOutcome()),
+        accumulators=(StepCount(), SDAOutcome()),
         batch_accumulators=(
             MeanResult(:steps; name=:mean_steps),
             Tools.StdErrResult(
@@ -363,9 +416,9 @@ function rollout_eval(game, joint_policy, initialstates; runs::Int, max_steps::I
                 name=:stderr_reward,
                 init=zero(MarkovGames.reward_type(game)),
             ),
-            RateResult(:attacker_goal),
-            RateResult(:tagged),
-            RateResult(:timeout),
+            RateResult(:detected),
+            RateResult(:target_escaped),
+            RateResult(:observer_lost),
         ),
     )
 end
@@ -374,7 +427,7 @@ evaluation_initialstates(rng, dist, n::Int) = [rand(rng, dist) for _ in 1:n]
 
 function run_one(solver::String, br_player::Int, game, oracle, model_iter, checkpoint, cfg)
     fixed, solver_meta = solver_policy(solver, game, oracle, cfg)
-    init_dist = initialstate_dist(game, cfg.initial_state)
+    init_dist = core_initialstate_distribution(game)
     # Pair PPO initialization and evaluation states across solver conditions.
     local_seed = cfg.seed + 10_000 * br_player
     ppo_name = ppo_log_name(solver, br_player)
@@ -391,7 +444,12 @@ function run_one(solver::String, br_player::Int, game, oracle, model_iter, check
 
     eval_rng = MersenneTwister(local_seed + 1)
     eval_states = evaluation_initialstates(eval_rng, init_dist, cfg.eval_runs)
-    joint_policy = Tools.ppo_best_response_joint_policy(game, fixed, actor, br_player)
+    joint_policy = Tools.ppo_best_response_joint_policy(
+        game,
+        fixed,
+        actor,
+        br_player,
+    )
     eval_result = rollout_eval(
         game,
         joint_policy,
@@ -425,7 +483,11 @@ function run_one(solver::String, br_player::Int, game, oracle, model_iter, check
         "max_depth" => cfg.max_depth,
         "epsilon" => cfg.epsilon,
         "prior_scale" => solver_meta.prior_scale,
-        "initial_state" => cfg.initial_state,
+        "prior_reach_power" => cfg.prior_reach_power,
+        "regret_prior_weight" => solver_meta.regret_prior_weight,
+        "strategy_prior_weight" => solver_meta.strategy_prior_weight,
+        "statistic_prior_weight" => solver_meta.statistic_prior_weight,
+        "initial_state" => CORE_DISTRIBUTION_NAME,
     )
     jldsave(model_path; actor, critic, metadata)
 
@@ -433,9 +495,8 @@ function run_one(solver::String, br_player::Int, game, oracle, model_iter, check
         "eval solver=$(solver) p$(br_player) response reward=",
         "$(round(response_reward; digits=4)) stderr=",
         "$(round(response_stderr; digits=4)) steps=",
-        "$(round(eval_result.mean_steps; digits=2)) goal=",
-        "$(round(eval_result.attacker_goal_rate; digits=3)) tagged=",
-        "$(round(eval_result.tagged_rate; digits=3))",
+        "$(round(eval_result.mean_steps; digits=2)) detection=",
+        "$(round(eval_result.detected_rate; digits=3))",
     )
 
     return (;
@@ -459,14 +520,18 @@ function run_one(solver::String, br_player::Int, game, oracle, model_iter, check
         max_depth=cfg.max_depth,
         epsilon=cfg.epsilon,
         prior_scale=solver_meta.prior_scale,
-        initial_state=cfg.initial_state,
+        prior_reach_power=cfg.prior_reach_power,
+        regret_prior_weight=solver_meta.regret_prior_weight,
+        strategy_prior_weight=solver_meta.strategy_prior_weight,
+        statistic_prior_weight=solver_meta.statistic_prior_weight,
+        initial_state=CORE_DISTRIBUTION_NAME,
         response_reward,
         response_stderr_reward=response_stderr,
         p1_reward=eval_result.reward[1],
         p2_reward=eval_result.reward[2],
-        attacker_goal_rate=eval_result.attacker_goal_rate,
-        tagged_rate=eval_result.tagged_rate,
-        timeout_rate=eval_result.timeout_rate,
+        detection_rate=eval_result.detected_rate,
+        target_escaped_rate=eval_result.target_escaped_rate,
+        observer_lost_rate=eval_result.observer_lost_rate,
         mean_steps=eval_result.mean_steps,
         model_path,
     )
@@ -493,24 +558,32 @@ const RESULT_COLUMNS = (
     :max_depth,
     :epsilon,
     :prior_scale,
+    :prior_reach_power,
+    :regret_prior_weight,
+    :strategy_prior_weight,
+    :statistic_prior_weight,
     :initial_state,
     :response_reward,
     :response_stderr_reward,
     :p1_reward,
     :p2_reward,
-    :attacker_goal_rate,
-    :tagged_rate,
-    :timeout_rate,
+    :detection_rate,
+    :target_escaped_rate,
+    :observer_lost_rate,
     :mean_steps,
     :model_path,
 )
 
-function write_named_tuples(path, rows, columns)
-    header = reshape(collect(String.(columns)), 1, :)
-    data = isempty(rows) ? Matrix{Any}(undef, 0, length(columns)) : reduce(
-        vcat,
-        [reshape(Any[getproperty(row, key) for key in columns], 1, :) for row in rows],
-    )
+function write_detailed_summary(path, results)
+    header = reshape(collect(String.(RESULT_COLUMNS)), 1, :)
+    data = isempty(results) ? Matrix{Any}(undef, 0, length(RESULT_COLUMNS)) :
+        reduce(vcat, [
+            reshape(
+                Any[getproperty(result, key) for key in RESULT_COLUMNS],
+                1,
+                :,
+            ) for result in results
+        ])
     mkpath(dirname(path))
     writedlm(path, [header; data], ',')
     return path
@@ -519,45 +592,73 @@ end
 function response_summary_rows(results, solvers)
     rows = NamedTuple[]
     for solver in solvers
-        solver_results = filter(result -> result.solver == solver, results)
-        p1 = filter(result -> result.response_player == 1, solver_results)
-        p2 = filter(result -> result.response_player == 2, solver_results)
+        solver_results = filter(r -> r.solver == solver, results)
+        p1 = filter(r -> r.response_player == 1, solver_results)
+        p2 = filter(r -> r.response_player == 2, solver_results)
         if length(p1) != 1 || length(p2) != 1
-            @warn "Skipping incomplete two-player response summary" solver
+            @warn "Skipping response-utility sum for incomplete solver" solver
             continue
         end
         r1, r2 = only(p1), only(p2)
+        utility_sum = r1.response_reward + r2.response_reward
+        utility_sum_stderr = hypot(
+            r1.response_stderr_reward,
+            r2.response_stderr_reward,
+        )
+        informative_nonnegative = utility_sum >= 0
+        informative_nonnegative || @warn(
+            "Negative summed PPO response utility is an uninformative lower bound; at least one response policy underfit",
+            solver,
+            utility_sum,
+            utility_sum_stderr,
+        )
         push!(rows, (;
             solver,
             response_p1_reward=r1.response_reward,
             response_p1_stderr=r1.response_stderr_reward,
             response_p2_reward=r2.response_reward,
             response_p2_stderr=r2.response_stderr_reward,
-            response_utility_sum=r1.response_reward + r2.response_reward,
-            response_utility_sum_stderr=hypot(
-                r1.response_stderr_reward,
-                r2.response_stderr_reward,
-            ),
+            summed_ppo_response_utility=utility_sum,
+            summed_ppo_response_utility_stderr=utility_sum_stderr,
+            half_summed_ppo_response_utility=0.5 * utility_sum,
+            half_summed_ppo_response_utility_stderr=0.5 * utility_sum_stderr,
+            informative_nonnegative,
         ))
     end
     return rows
 end
 
-const SUMMARY_COLUMNS = (
-    :solver,
-    :response_p1_reward,
-    :response_p1_stderr,
-    :response_p2_reward,
-    :response_p2_stderr,
-    :response_utility_sum,
-    :response_utility_sum_stderr,
-)
+function write_response_summary(path, rows)
+    columns = (
+        :solver,
+        :response_p1_reward,
+        :response_p1_stderr,
+        :response_p2_reward,
+        :response_p2_stderr,
+        :summed_ppo_response_utility,
+        :summed_ppo_response_utility_stderr,
+        :half_summed_ppo_response_utility,
+        :half_summed_ppo_response_utility_stderr,
+        :informative_nonnegative,
+    )
+    header = reshape(collect(String.(columns)), 1, :)
+    data = isempty(rows) ? Matrix{Any}(undef, 0, length(columns)) :
+        reduce(vcat, [
+            reshape(Any[getproperty(row, key) for key in columns], 1, :)
+            for row in rows
+        ])
+    writedlm(path, [header; data], ',')
+    return path
+end
 
 function write_failures(path, failures)
     isempty(failures) && return nothing
     rows = Any["solver" "response_player" "error"]
     for failure in failures
-        rows = vcat(rows, Any[failure.solver failure.response_player failure.error])
+        rows = vcat(
+            rows,
+            Any[failure.solver failure.response_player failure.error],
+        )
     end
     writedlm(path, rows, ',')
     return path
@@ -565,15 +666,20 @@ end
 
 function main(args)
     cfg = parse_args(args)
-    game = DubinMG(V=(1.0, 1.0))
-    oracle, model_iter, checkpoint = load_checkpoint_oracle(cfg.iter)
+    game = make_game()
+    value_oracle, model_iter, checkpoint = load_checkpoint_oracle(cfg.iter)
+    transfer_oracle = load_regret_refit(value_oracle)
+    oracle = (; value=value_oracle, transfer=transfer_oracle)
     mkpath(cfg.output_dir)
     println("Loaded checkpoint: $(checkpoint)")
     println("Solvers: $(join(cfg.solvers, ", "))")
-    println("Players: $(join(cfg.players, ", "))")
+    println("Response players: $(join(cfg.players, ", "))")
     println(
-        "Search: queries=$(cfg.tree_queries) depth=$(cfg.max_depth) ",
-        "epsilon=$(cfg.epsilon) full_solver_prior_scale=$(cfg.prior_scale)",
+        "PPO horizon=$(cfg.max_steps) gamma=$(cfg.gamma); search epsilon=$(cfg.epsilon)",
+    )
+    println(
+        "Transfer: regret-only prior_scale=$(cfg.prior_scale) ",
+        "reach_power=$(cfg.prior_reach_power); strategy/statistic weights=0",
     )
 
     results = NamedTuple[]
@@ -592,28 +698,34 @@ function main(args)
         catch err
             cfg.fail_fast && rethrow()
             message = replace(sprint(showerror, err), '\n' => ' ')
-            @error "PPO response evaluation failed" solver response_player exception=(err, catch_backtrace())
+            @error(
+                "PPO response-utility evaluation failed",
+                solver,
+                response_player,
+                exception=(err, catch_backtrace()),
+            )
             push!(failures, (; solver, response_player, error=message))
         end
     end
 
-    detailed_path = write_named_tuples(
-        joinpath(cfg.output_dir, "response_utilities.csv"),
+    detailed_path = write_detailed_summary(
+        joinpath(cfg.output_dir, "best_response_utilities.csv"),
         results,
-        RESULT_COLUMNS,
     )
-    summary = response_summary_rows(results, cfg.solvers)
-    summary_path = write_named_tuples(
+    aggregate = response_summary_rows(results, cfg.solvers)
+    summary_path = write_response_summary(
         joinpath(cfg.output_dir, "response_utility_summary.csv"),
-        summary,
-        SUMMARY_COLUMNS,
+        aggregate,
     )
-    failure_path = write_failures(joinpath(cfg.output_dir, "failures.csv"), failures)
+    failure_path = write_failures(
+        joinpath(cfg.output_dir, "failures.csv"),
+        failures,
+    )
 
-    println("Wrote response utilities: $(detailed_path)")
-    println("Wrote response summary: $(summary_path)")
+    println("Wrote PPO response utilities: $(detailed_path)")
+    println("Wrote response-utility summary: $(summary_path)")
     isnothing(failure_path) || println("Wrote failures: $(failure_path)")
-    return (; results, summary, failures)
+    return (; results, aggregate, failures)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
