@@ -1,0 +1,4 @@
+row_solver,opponent_zero_oracle,opponent_value_oracle,opponent_full_solver
+zero_oracle,0.0,-1.4788751379365674,-2.777418541007922
+value_oracle,1.4788751379365674,0.0,-0.7253206482301238
+full_solver,2.777418541007922,0.7253206482301238,0.0
