@@ -1,0 +1,42 @@
+  Activating project at `~/code/MatrixAlphaZero/experiments`
+checkpoint iter=1221  queries=100  prior_scale=5.00  cap_ratio=0.50  gate_tol=1.00
+[h2h] zero_oracle          vs value_oracle: -2.7724 ± 0.6249  (p1 +9.125, p2 +14.669) (115s)
+[pool] zero_oracle          seat1(secures)=+8.3873 seat2(concedes)=-18.1594 | sum mean=-9.7721 worst=-17.9665  full_solver=-5.29 value_oracle=-6.06 zero_oracle=-17.966  (71s)
+[pool] value_oracle         seat1(secures)=+7.3818 seat2(concedes)=-11.2029 | sum mean=-3.8211 worst=-4.6843  full_solver=-4.684 value_oracle=-4.389 zero_oracle=-2.39  (231s)
+[h2h] warmstart            vs value_oracle: +0.6050 ± 0.4854  (p1 +8.323, p2 +7.113) (195s)
+[pool] warmstart            seat1(secures)=+8.2402 seat2(concedes)=-11.1820 | sum mean=-2.9419 worst=-4.1231  full_solver=-4.123 value_oracle=-3.762 zero_oracle=-0.941  (377s)
+[h2h] masked_warmstart     vs value_oracle: +0.8559 ± 0.4585  (p1 +9.490, p2 +7.778) (291s)
+[pool] masked_warmstart     seat1(secures)=+7.9552 seat2(concedes)=-11.1020 | sum mean=-3.1468 worst=-3.9614  full_solver=-3.727 value_oracle=-3.961 zero_oracle=-1.752  (554s)
+[h2h] temper0p03           vs value_oracle: +0.5649 ± 0.4958  (p1 +8.939, p2 +7.809) (331s)
+[pool] temper0p03           seat1(secures)=+8.2122 seat2(concedes)=-10.8795 | sum mean=-2.6673 worst=-3.6816  full_solver=-3.682 value_oracle=-3.008 zero_oracle=-1.312  (512s)
+[h2h] masked_temper0p03    vs value_oracle: +0.9339 ± 0.4924  (p1 +9.828, p2 +7.961) (244s)
+[pool] masked_temper0p03    seat1(secures)=+8.0510 seat2(concedes)=-11.1474 | sum mean=-3.0964 worst=-4.2429  full_solver=-3.839 value_oracle=-4.243 zero_oracle=-1.207  (436s)
+[h2h] depth0               vs value_oracle: -0.5535 ± 0.4963  (p1 +7.803, p2 +8.910) (195s)
+[pool] depth0               seat1(secures)=+8.1052 seat2(concedes)=-11.3985 | sum mean=-3.2934 worst=-4.6157  full_solver=-4.616 value_oracle=-3.167 zero_oracle=-2.097  (257s)
+
+=== summary ===
+Per-seat best-response utility, both signed so higher is better for the
+solver: seat 1 is the value it secures as player 1, seat 2 the negated
+value it concedes as player 2. A Nash profile requires BOTH to be optimal,
+so both paired deltas must be nonnegative — a NashConv-style sum can hide
+a transfer that helps one seat and hurts the other.
+
+solver                   seat1 (↑)   seat2 (↑)     paired Δ seat1 (↑)     paired Δ seat2 (↑)   h2h vs value (↑)
+zero_oracle                 8.3873    -18.1594    +1.0055 ± 0.3522       -6.9565 ± 0.4496     -2.7724 ± 0.6249  
+value_oracle                7.3818    -11.2029    +0.0000 ± 0.0000       +0.0000 ± 0.0000         NaN ± NaN     
+warmstart                   8.2402    -11.1820    +0.8584 ± 0.3137       +0.0208 ± 0.2253      0.6050 ± 0.4854  
+masked_warmstart            7.9552    -11.1020    +0.5734 ± 0.3410       +0.1008 ± 0.2146      0.8559 ± 0.4585  
+temper0p03                  8.2122    -10.8795    +0.8304 ± 0.3185       +0.3234 ± 0.2234      0.5649 ± 0.4958  
+masked_temper0p03           8.0510    -11.1474    +0.6692 ± 0.3152       +0.0554 ± 0.2317      0.9339 ± 0.4924  
+depth0                      8.1052    -11.3985    +0.7234 ± 0.3409       -0.1957 ± 0.2572     -0.5535 ± 0.4963  
+
+solver                   sum mean (↑)  sum worst (↑) paired Δ sum vs value (↑)
+zero_oracle                   -9.7721       -17.9665      -5.9510 ± 0.5994   
+value_oracle                  -3.8211        -4.6843      +0.0000 ± 0.0000   
+warmstart                     -2.9419        -4.1231      +0.8792 ± 0.3851   
+masked_warmstart              -3.1468        -3.9614      +0.6743 ± 0.3923   
+temper0p03                    -2.6673        -3.6816      +1.1538 ± 0.3737   
+masked_temper0p03             -3.0964        -4.2429      +0.7247 ± 0.3932   
+depth0                        -3.2934        -4.6157      +0.5277 ± 0.4329   
+
+wrote experiments/sda/sda-2026-07-21/transfer_mode_benchmark_perseat/results.csv

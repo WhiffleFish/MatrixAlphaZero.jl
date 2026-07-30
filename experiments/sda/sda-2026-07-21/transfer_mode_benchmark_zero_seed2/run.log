@@ -1,0 +1,21 @@
+  Activating project at `~/code/MatrixAlphaZero/experiments`
+checkpoint iter=1221  queries=100  prior_scale=5.00  cap_ratio=0.50  gate_tol=1.00  update=sampled
+[pool] value_oracle         seat1(secures)=+7.1363 seat2(concedes)=-11.1886 | sum mean=-4.0524 worst=-5.0125  full_solver=-4.751 value_oracle=-5.013 zero_oracle=-2.393  (217s)
+[pool] zero_oracle          seat1(secures)=+8.4198 seat2(concedes)=-18.5863 | sum mean=-10.1665 worst=-18.7911  full_solver=-5.15 value_oracle=-6.558 zero_oracle=-18.791  (67s)
+
+=== summary ===
+Per-seat best-response utility, both signed so higher is better for the
+solver: seat 1 is the value it secures as player 1, seat 2 the negated
+value it concedes as player 2. A Nash profile requires BOTH to be optimal,
+so both paired deltas must be nonnegative — a NashConv-style sum can hide
+a transfer that helps one seat and hurts the other.
+
+solver                   seat1 (↑)   seat2 (↑)     paired Δ seat1 (↑)     paired Δ seat2 (↑)   h2h vs value (↑)
+value_oracle                7.1363    -11.1886    +0.0000 ± 0.0000       +0.0000 ± 0.0000         NaN ± NaN     
+zero_oracle                 8.4198    -18.5863    +1.2836 ± 0.3193       -7.3977 ± 0.4832         NaN ± NaN     
+
+solver                   sum mean (↑)  sum worst (↑) paired Δ sum vs value (↑)
+value_oracle                  -4.0524        -5.0125      +0.0000 ± 0.0000   
+zero_oracle                  -10.1665       -18.7911      -6.1141 ± 0.5957   
+
+wrote experiments/sda/sda-2026-07-21/transfer_mode_benchmark_zero_seed2/results.csv

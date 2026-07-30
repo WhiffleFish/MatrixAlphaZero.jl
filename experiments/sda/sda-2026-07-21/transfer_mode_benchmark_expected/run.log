@@ -1,0 +1,30 @@
+  Activating project at `~/code/MatrixAlphaZero/experiments`
+checkpoint iter=1221  queries=100  prior_scale=5.00  cap_ratio=0.50  gate_tol=1.00  update=expected
+[h2h] zero_oracle          vs value_oracle: -5.3436 ± 0.6561  (p1 +7.411, p2 +18.098) (125s)
+[pool] zero_oracle          seat1(secures)=+9.2988 seat2(concedes)=-17.5319 | sum mean=-8.2332 worst=-17.3266  full_solver=-4.216 value_oracle=-3.157 zero_oracle=-17.327  (89s)
+[pool] value_oracle         seat1(secures)=+7.5514 seat2(concedes)=-10.5639 | sum mean=-3.0125 worst=-4.6789  full_solver=-4.679 value_oracle=-3.729 zero_oracle=-0.63  (257s)
+[h2h] warmstart            vs value_oracle: -0.2643 ± 0.4543  (p1 +8.494, p2 +9.023) (276s)
+[pool] warmstart            seat1(secures)=+7.8662 seat2(concedes)=-10.5127 | sum mean=-2.6464 worst=-3.9676  full_solver=-3.968 value_oracle=-3.842 zero_oracle=-0.13  (504s)
+[h2h] masked_warmstart     vs value_oracle: -0.2545 ± 0.4408  (p1 +8.181, p2 +8.690) (338s)
+[pool] masked_warmstart     seat1(secures)=+7.8569 seat2(concedes)=-10.9075 | sum mean=-3.0506 worst=-4.1242  full_solver=-4.106 value_oracle=-4.124 zero_oracle=-0.921  (507s)
+
+=== summary ===
+Per-seat best-response utility, both signed so higher is better for the
+solver: seat 1 is the value it secures as player 1, seat 2 the negated
+value it concedes as player 2. A Nash profile requires BOTH to be optimal,
+so both paired deltas must be nonnegative — a NashConv-style sum can hide
+a transfer that helps one seat and hurts the other.
+
+solver                   seat1 (↑)   seat2 (↑)     paired Δ seat1 (↑)     paired Δ seat2 (↑)   h2h vs value (↑)
+zero_oracle                 9.2988    -17.5319    +1.7474 ± 0.3169       -6.9680 ± 0.4677     -5.3436 ± 0.6561  
+value_oracle                7.5514    -10.5639    +0.0000 ± 0.0000       +0.0000 ± 0.0000         NaN ± NaN     
+warmstart                   7.8662    -10.5127    +0.3149 ± 0.2899       +0.0513 ± 0.1809     -0.2643 ± 0.4543  
+masked_warmstart            7.8569    -10.9075    +0.3055 ± 0.3477       -0.3436 ± 0.1816     -0.2545 ± 0.4408  
+
+solver                   sum mean (↑)  sum worst (↑) paired Δ sum vs value (↑)
+zero_oracle                   -8.2332       -17.3266      -5.2206 ± 0.6018   
+value_oracle                  -3.0125        -4.6789      +0.0000 ± 0.0000   
+warmstart                     -2.6464        -3.9676      +0.3661 ± 0.3480   
+masked_warmstart              -3.0506        -4.1242      -0.0381 ± 0.3841   
+
+wrote experiments/sda/sda-2026-07-21/transfer_mode_benchmark_expected/results.csv

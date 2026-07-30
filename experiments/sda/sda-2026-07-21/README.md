@@ -203,3 +203,55 @@ julia --project=experiments \
 
 Results are written to `value_vs_regret_head_to_head/matchups.csv`, with the
 seat-balanced calculation in `summary.csv`.
+
+## Transfer-mode comparison (2026-07-30)
+
+Two changes to deployment-time regret transfer, one for *what* is transferred and
+one for *how*. See `notes/regret_transfer.md` for the measurements behind them.
+
+### Score a regret model by what the search consumes
+
+Regret matching normalizes its input, so only the direction of `[R̄̂]₊` reaches the
+solver and regression RMSE is the wrong selection criterion:
+
+```bash
+julia --project=experiments experiments/sda/sda-2026-07-21/score_regret_directions.jl
+```
+
+`closed` is the fraction of a uniform prior's total-variation distance to the true
+regret-matching direction that a candidate closes. The deployed
+`regret_fit_results_softplus_long/baseline` refit has the best RMSE of every
+candidate and closes only 12.3% / 26.5% (players 1 / 2); masking its magnitudes to
+the hurdle gate's predicted support closes 31.1% / 48.3%. Validation and test
+agree on the ranking.
+
+### Compare transfer variants on both metrics
+
+```bash
+julia --project=experiments experiments/sda/sda-2026-07-21/benchmark_transfer_modes.jl \
+    --episodes 150 --max-steps 50 \
+    --solvers value_oracle,warmstart,masked_warmstart,masked_temper0p1,temper0p1,depth0
+```
+
+Reports, per solver, utility against a **fixed** pool of PPO exploiters (the
+responses already trained against `zero_oracle`, `value_oracle`, and
+`full_solver`, reused so that every solver faces identical adversaries and no
+solver benefits from its own response underfitting) and seat-balanced
+head-to-head cross-play against the value-only solver. Per-episode values are
+paired under common random numbers, so the `paired Δ vs value` column is far more
+sensitive than the levels.
+
+Solver names: `warmstart` is the current deployment; the `masked_` prefix swaps in
+the support-masked regret prior; `temper<ν>` sets `transfer_mode=:tempered` with
+tempering weight ν; `temperflat<ν>` additionally sets `prior_reach_power=0` so λ
+tempers on magnitude alone; `depth<d>` restricts the untempered warm start to
+depth ≤ d, which isolates how much of the transfer effect comes from applying the
+prior off the training support (the heads are fitted only at environment decision
+states).
+
+`transfer_mode_common.jl` holds the harness. It deliberately avoids
+ExperimentTools so it runs without the Conda-backed Wandb bootstrap. It also
+contains `truncated_gap`, an exact enumerated best response over a short horizon;
+that metric is degenerate on SDA because the orbital geometry yields no reward
+differential over two to four steps, which is why the fixed exploiter pool is
+used instead.

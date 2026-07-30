@@ -95,5 +95,7 @@ The default `tabular_regret_transfer_results/` directory contains:
 - `ordinary_rm_plus_summary.csv` with the single ordinary-RM+ mean, standard
   deviation, SEM, and number of unique evaluations;
 - `regret_transfer_heatmaps.png` and `.pdf` with transferred RM+ and paired gap
-  reduction panels; the ordinary-RM+ scalar reference is shown above them;
+  reduction panels;
+- `regret_transfer_gap_reduction.png` and `.pdf` with the standalone paired
+  gap-reduction panel;
 - `config.txt` with the exact run configuration and chosen state.

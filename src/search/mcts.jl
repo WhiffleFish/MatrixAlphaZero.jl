@@ -10,6 +10,14 @@ struct SearchTree{S}
     regret      :: NTuple{2, Vector{Vector{Float64}}}
     fresh_regret:: NTuple{2, Vector{Vector{Float64}}}
     policy_sum  :: NTuple{2, Vector{Vector{Float64}}}
+    # Transferred prior held per node, kept out of the live accumulators so the
+    # non-`:warmstart` modes can scale it at read time. `regret_init` is the
+    # nonnegative fitted average regret R̄̂(h,·), `strategy_init` the normalized
+    # fitted average strategy σ̄̂(h,·), and `prior_mass` the node's effective
+    # transferred mass m_R(h) = prior_scale·q_π̄(h)^prior_reach_power.
+    regret_init  :: NTuple{2, Vector{Vector{Float64}}}
+    strategy_init:: NTuple{2, Vector{Vector{Float64}}}
+    prior_mass  :: Vector{Float64}
 end
 
 const NO_CHILDREN = Matrix{Int}(undef, 0, 0)
@@ -30,6 +38,9 @@ function SearchTree(game::MG, s=rand(initialstate(game)))
         ([NO_FLOAT], [NO_FLOAT]),
         ([NO_FLOAT], [NO_FLOAT]),
         ([NO_FLOAT], [NO_FLOAT]),
+        ([NO_FLOAT], [NO_FLOAT]),
+        ([NO_FLOAT], [NO_FLOAT]),
+        [0.0],
     )
 end
 
@@ -45,6 +56,11 @@ function reset_search_node!(tree::SearchTree, s_idx::Int, na1::Int, na2::Int)
     tree.fresh_regret[2][s_idx] = zeros(Float64, na2)
     tree.policy_sum[1][s_idx] = zeros(Float64, na1)
     tree.policy_sum[2][s_idx] = zeros(Float64, na2)
+    tree.regret_init[1][s_idx] = zeros(Float64, na1)
+    tree.regret_init[2][s_idx] = zeros(Float64, na2)
+    tree.strategy_init[1][s_idx] = fill(inv(na1), na1)
+    tree.strategy_init[2][s_idx] = fill(inv(na2), na2)
+    tree.prior_mass[s_idx] = 0.0
     return nothing
 end
 
@@ -59,6 +75,13 @@ function append_search_frontier!(tree::SearchTree, n_frontier::Int)
     foreach(tree.policy_sum) do policy_i
         append!(policy_i, fill(NO_FLOAT, n_frontier))
     end
+    foreach(tree.regret_init) do regret_i
+        append!(regret_i, fill(NO_FLOAT, n_frontier))
+    end
+    foreach(tree.strategy_init) do strategy_i
+        append!(strategy_i, fill(NO_FLOAT, n_frontier))
+    end
+    append!(tree.prior_mass, fill(0.0, n_frontier))
     return nothing
 end
 
@@ -168,11 +191,164 @@ function mcts_prior(params::MCTSSearch, game::MG, s, learned_reach::Real=1.0)
     return (r1, r2), (s1, s2)
 end
 
+# Unit-mass form of the prior: the nonnegative fitted average regret and the
+# normalized fitted average strategy, with the node's effective mass returned
+# separately so read-time modes can rescale it.
+function mcts_unit_prior(params::MCTSSearch, game::MG, s)
+    r̂ = state_regret(params.oracle, game, s)
+    ŝ = state_strategy(params.oracle, game, s)
+    r1 = Float64.(r̂[1])
+    r2 = Float64.(r̂[2])
+    prepare_transfer_regret!(params.search_style.method, r1)
+    prepare_transfer_regret!(params.search_style.method, r2)
+    s1 = normalized_or_uniform(Float64.(ŝ[1]))
+    s2 = normalized_or_uniform(Float64.(ŝ[2]))
+    return (r1, r2), (s1, s2)
+end
+
 prepare_transfer_regret!(::Vanilla, regret) = regret
 
 function prepare_transfer_regret!(::Plus, regret)
     regret .= max.(regret, 0.0)
     return regret
+end
+
+const TRANSFER_MODES = (:warmstart, :tempered, :capped, :gated)
+
+# Fraction of a node's full transferred mass that the node is allowed to feel,
+# given the fresh evidence n it has accumulated.
+#
+# The cap enforces m_eff(h) = min(m_R(h), ρ·n_s), so the transfer-bias ratio
+# m_R/(m_R + T₂) of the approximate-transfer bound is at most ρ/(1+ρ) at every
+# node in the tree. It is also what restores monotonicity in `prior_scale` and
+# in the reach attenuation: under `:warmstart` a node with no fresh regret plays
+# the prior direction no matter how small its mass is, because regret matching
+# normalizes away the scale.
+function transfer_cap_fraction(params::MCTSSearch, mass::Float64, n::Float64)
+    mass > 0 || return 0.0
+    return min(1.0, params.transfer_cap_ratio * n / mass)
+end
+
+# Payoff range of a node's own matrix game, used as the scale Δ in the gate's
+# concentration floor. Reading it off the node keeps the gate meaningful in
+# domains whose reward magnitude varies by orders of magnitude across states.
+function node_payoff_range(params::MCTSSearch, q::AbstractMatrix)
+    isfinite(params.transfer_payoff_bound) && return params.transfer_payoff_bound
+    isempty(q) && return 0.0
+    lo, hi = extrema(q)
+    return hi - lo
+end
+
+# Evidence gate. Ĝ(h) is the prior strategy pair's saddle gap on the node's own
+# current payoff matrix, an observable surrogate for the (2δ_u + δ_R) transfer
+# error that multiplies the bias term of the approximate-transfer bound. Mass is
+# withdrawn linearly once that gap exceeds regret matching's own concentration
+# floor κ·Δ·√|A|/√n_s at the node's current evidence level, so the prior keeps
+# its mass only while its measured wrongness is indistinguishable from search
+# noise.
+function transfer_gate(params::MCTSSearch, tree::SearchTree, s_idx::Int, γ::Float64)
+    n = tree.n_s[s_idx]
+    n > 0 || return 1.0
+    isempty(tree.r[s_idx]) && return 1.0
+    q = node_matrix_game(tree, s_idx, γ)
+    x̂ = tree.strategy_init[1][s_idx]
+    ŷ = tree.strategy_init[2][s_idx]
+    gap = maximum(q * ŷ) - minimum(transpose(q) * x̂)
+    Δ = node_payoff_range(params, q)
+    Δ > 0 || return 1.0
+    floor_n = params.transfer_gate_tol * Δ * sqrt(maximum(size(q))) / sqrt(n)
+    floor_n > 0 || return 1.0
+    return clamp(2.0 - gap / floor_n, 0.0, 1.0)
+end
+
+# Effective transferred mass at a node under the active transfer mode.
+function transfer_mass(params::MCTSSearch, tree::SearchTree, s_idx::Int, γ::Float64)
+    mass = tree.prior_mass[s_idx]
+    mass > 0 || return 0.0
+    params.transfer_mode === :warmstart && return mass
+    c = transfer_cap_fraction(params, mass, tree.n_s[s_idx])
+    params.transfer_mode === :gated && (c *= transfer_gate(params, tree, s_idx, γ))
+    return c * mass
+end
+
+read_time_transfer(params::MCTSSearch) =
+    has_prior_transfer(params) && params.transfer_mode ∈ (:capped, :gated)
+
+# Uniform tempering of the transferred regret.
+#
+# Regret matching normalizes, so the strategy a freshly expanded node plays is
+# RM([R̄̂]₊) whatever the transferred mass is: neither `prior_scale` nor the reach
+# attenuation can weaken the prior's grip on the nodes where it decides
+# everything, and the raw shape of a regression residual is what sets how
+# sharply the node commits. Tempering redistributes the transferred vector
+# toward uniform *at fixed total mass*,
+#
+#   R₀(h,·) = m_R(h)·[ λ(h)·w(h,·) + (1-λ(h))·‖w(h,·)‖₁/|A| ],
+#   w       = [R̄̂(h,·)]₊,
+#   λ(h)    = q(h)^p‖w‖₁ / ( q(h)^p‖w‖₁ + temper·Δ̂(h) ),
+#
+# where Δ̂(h) is the node's own payoff range. The node's played strategy becomes
+# the explicit mixture (1-λ)·uniform + λ·RM(w), so λ — not the mass — is the
+# knob that decides how hard a fresh node commits to the prior, and it behaves:
+#
+#   * `temper = 0` gives λ = 1 and reproduces `:warmstart` exactly; as
+#     `temper → ∞`, λ → 0 and the injection becomes a uniform vector of the same
+#     small mass, which one real iteration overwhelms — so that limit is the cold
+#     value-only solver rather than a node frozen at uniform. Holding the mass
+#     fixed is what makes both endpoints recoverable.
+#   * λ decreases with the reach q(h)^p, so the attenuation that was meant to
+#     distrust deep unsupervised nodes finally reaches the played strategy.
+#   * λ increases with ‖w‖₁ measured against Δ̂(h). This is the calibration that
+#     matters: R̄̂ estimates an *average* regret, which vanishes as the source
+#     solve converges, so a fitted magnitude that is small next to the local
+#     payoff range means the direction is mostly fitting error and the node
+#     should stay near uniform. Dividing by Δ̂(h) keeps this scale-free across
+#     states whose reward magnitudes differ by orders of magnitude.
+#
+# Total mass is preserved, so ‖R₀‖₁ is exactly the mass the transfer theorem
+# prescribes, and Φ(R₀) ≤ Φ(m_R·w) because moving mass toward the mean cannot
+# raise a sum of squares: whenever the untempered warm start satisfied the
+# theorem's weight condition Φ(R̊) ≤ wT₁|A|Δ², the tempered one satisfies it too.
+#
+# Tempering is added to the accumulator rather than mixed in at read time, which
+# is what makes it behave better than `:capped`/`:gated` under RM+. In the
+# accumulator, `accumulate_regret!(::Plus, …)` clips at zero, so the first update
+# that contradicts the injected prior destroys it. Held outside the accumulator
+# and re-added at every read, the same prior is permanent: the live regret is
+# clipped at zero and therefore cannot build the negative counterweight that
+# would cancel a re-injected term. Plain RM has no clipping and can build that
+# counterweight, which is why read-time mixing looks sound under `Vanilla`.
+#
+# The construction assumes the nonnegative prior that `Plus` produces, since
+# ‖w‖₁ is read off as `sum(w)`. Under `Vanilla` a transferred vector with
+# nonpositive total is left untempered.
+function temper_transfer_regret!(
+        params::MCTSSearch,
+        tree::SearchTree,
+        s_idx::Int,
+        game::MG,
+        r1::AbstractVector,
+        r2::AbstractVector,
+        learned_reach::Real,
+    )
+    params.transfer_temper > 0 || return nothing
+    q = node_matrix_game(tree, s_idx, discount(game))
+    isempty(q) && return nothing
+    lo, hi = extrema(q)
+    Δ̂ = hi - lo
+    Δ̂ > 0 || return nothing
+    # `r` already carries m_R = prior_scale*regret_prior_weight*q(h)^p, so
+    # dividing it out leaves q(h)^p‖w‖₁ and makes λ invariant to the mass knobs.
+    unit = params.prior_scale * params.regret_prior_weight
+    unit > 0 || return nothing
+    for r in (r1, r2)
+        mass = sum(r)
+        mass > 0 || continue
+        signal = mass / unit
+        λ = signal / (signal + params.transfer_temper * Δ̂)
+        r .= λ .* r .+ (1 - λ) * mass / length(r)
+    end
+    return nothing
 end
 
 function warmstart_node!(
@@ -182,18 +358,38 @@ function warmstart_node!(
         game::MG;
         learned_reach::Real=1.0,
         value_prior=nothing,
+        depth::Int=0,
     )
     has_prior_transfer(params) || return nothing
-    (r1, r2), (s1, s2) = mcts_prior(params, game, tree.s[s_idx], learned_reach)
+    depth <= params.transfer_max_depth || return nothing
+    params.transfer_mode ∈ TRANSFER_MODES || throw(ArgumentError(
+        "Unsupported transfer_mode=$(params.transfer_mode). Use one of $(TRANSFER_MODES).",
+    ))
     prior_mass = effective_prior_mass(params, learned_reach)
+    tree.prior_mass[s_idx] = prior_mass
+    # One oracle query per head; both the unit-mass and the scaled forms are
+    # derived from it.
+    (ur1, ur2), (π1, π2) = mcts_unit_prior(params, game, tree.s[s_idx])
+    if params.transfer_mode ∈ (:capped, :gated)
+        # Live accumulators stay clean; the prior is mixed in at read time.
+        tree.regret_init[1][s_idx] .= ur1
+        tree.regret_init[2][s_idx] .= ur2
+        tree.strategy_init[1][s_idx] .= π1
+        tree.strategy_init[2][s_idx] .= π2
+        return nothing
+    end
+    regret_mass = prior_mass * params.regret_prior_weight
+    strategy_mass = prior_mass * params.strategy_prior_weight
+    r1 = regret_mass .* ur1
+    r2 = regret_mass .* ur2
+    if params.transfer_mode === :tempered
+        temper_transfer_regret!(params, tree, s_idx, game, r1, r2, learned_reach)
+    end
     statistic_mass = prior_mass * params.statistic_prior_weight
-    strategy_prior = state_strategy(params.oracle, game, tree.s[s_idx])
-    π1 = normalized_or_uniform(Float64.(strategy_prior[1]))
-    π2 = normalized_or_uniform(Float64.(strategy_prior[2]))
     tree.regret[1][s_idx] .= r1
     tree.regret[2][s_idx] .= r2
-    tree.policy_sum[1][s_idx] .= s1
-    tree.policy_sum[2][s_idx] .= s2
+    tree.policy_sum[1][s_idx] .= strategy_mass .* π1
+    tree.policy_sum[2][s_idx] .= strategy_mass .* π2
     tree.n_s[s_idx] = statistic_mass
     tree.n_sa[s_idx] .= statistic_mass .* (π1 * transpose(π2))
     value_prior = isnothing(value_prior) ?
@@ -246,6 +442,27 @@ function current_policy(::RegretMatchingSearch, tree::SearchTree, s_idx::Int)
     return x, y
 end
 
+# Regret-matching policy under read-time transfer: the node's own accumulated
+# regret plus the gated/capped share of the transferred average regret.
+function current_policy(
+        style::RegretMatchingSearch,
+        params::MCTSSearch,
+        tree::SearchTree,
+        s_idx::Int,
+        γ::Float64,
+    )
+    read_time_transfer(params) || return current_policy(style, tree, s_idx)
+    m = transfer_mass(params, tree, s_idx, γ) * params.regret_prior_weight
+    iszero(m) && return current_policy(style, tree, s_idx)
+    x = regret_matching_policy(
+        tree.regret[1][s_idx] .+ m .* tree.regret_init[1][s_idx],
+    )
+    y = regret_matching_policy(
+        tree.regret[2][s_idx] .+ m .* tree.regret_init[2][s_idx],
+    )
+    return x, y
+end
+
 function selection_policy(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int; ϵ=0.30)
     x, y = current_policy(style, tree, s_idx)
     return eps_exploration(x, ϵ), eps_exploration(y, ϵ)
@@ -262,19 +479,54 @@ function accumulate_regret!(::Plus, regret, delta)
 end
 
 function update_node!(style::RegretMatchingSearch, tree::SearchTree, s_idx::Int, a::CartesianIndex{2}, total::Float64, π1, π2, γ::Float64)
-    i, j = Tuple(a)
     q = node_matrix_game(tree, s_idx, γ)
-    Δ1 = view(q, :, j) .- total
-    Δ1[i] = 0.0
+    Δ1, Δ2 = regret_increments(style, q, a, total, π1, π2)
     accumulate_regret!(style.method, tree.regret[1][s_idx], Δ1)
     accumulate_regret!(style.method, tree.fresh_regret[1][s_idx], Δ1)
-    Δ2 = total .- vec(view(q, i, :))
-    Δ2[j] = 0.0
     accumulate_regret!(style.method, tree.regret[2][s_idx], Δ2)
     accumulate_regret!(style.method, tree.fresh_regret[2][s_idx], Δ2)
     tree.policy_sum[1][s_idx] .+= π1
     tree.policy_sum[2][s_idx] .+= π2
     return nothing
+end
+
+# Instantaneous counterfactual regret at a node, in two variants.
+#
+# `:sampled` is SM-MCTS-A's estimator: read the column the opponent actually
+# played and compare it against the sampled return. It is a one-sample estimate,
+# and at a 100-query depth-5 budget roughly three quarters of expanded nodes never
+# exceed two visits, so most nodes never average that sample down. It also mixes
+# baselines — the off-diagonal entries are compared against the sampled `total`
+# while the played action is forced to zero, and `total` uses the freshly returned
+# child value where `q` uses the child's running mean.
+#
+# `:expected` takes the exact expectation under the node's own current strategy
+# pair,
+#
+#   Δ₁ = q σ₂ - σ₁ᵀ q σ₂,     Δ₂ = σ₁ᵀ q σ₂ - qᵀ σ₁,
+#
+# which is ordinary regret matching on the node's estimated matrix game. It costs
+# one matrix-vector product per player, needs no extra oracle call, and uses
+# strictly the same information: the sampled variant already reads a whole column
+# of `q`, including entries no simulation has refined.
+#
+# The trade is explicit. `:expected` removes the opponent-sampling variance and
+# the baseline inconsistency, and makes the node's regret independent of the
+# ε-exploration, which then only decides where child values get refined. In
+# exchange it leans on every entry of `q`, so unrefined entries carry more weight
+# — variance for value-model bias.
+function regret_increments(style::RegretMatchingSearch, q, a::CartesianIndex{2}, total::Float64, σ1, σ2)
+    if style.update === :expected
+        qσ2 = q * σ2
+        u = dot(σ1, qσ2)
+        return qσ2 .- u, u .- (transpose(q) * σ1)
+    end
+    i, j = Tuple(a)
+    Δ1 = view(q, :, j) .- total
+    Δ1[i] = 0.0
+    Δ2 = total .- vec(view(q, i, :))
+    Δ2[j] = 0.0
+    return Δ1, Δ2
 end
 
 function zero_query_search(oracle, game::MG, s)
@@ -321,7 +573,7 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
     elseif is_leaf(tree, s_idx)
         expand_s!(tree, s_idx, game, params.oracle)
         leaf_value = oracle_state_value(params.oracle, game, s)
-        warmstart_node!(params, tree, s_idx, game; learned_reach, value_prior=leaf_value)
+        warmstart_node!(params, tree, s_idx, game; learned_reach, value_prior=leaf_value, depth)
         add_return_sum!(tree, s_idx, leaf_value)
         tree.n_s[s_idx] += 1
         return leaf_value
@@ -330,7 +582,7 @@ function simulate_regret_matching(style::RegretMatchingSearch, params::MCTSSearc
         # Traverse with an exploratory behavior policy, but accumulate the
         # unperturbed regret-matching policy. Self-play adds epsilon exactly
         # once when it samples the returned average strategy.
-        σ1, σ2 = current_policy(style, tree, s_idx)
+        σ1, σ2 = current_policy(style, params, tree, s_idx, γ)
         μ1, μ2 = eps_exploration(σ1, ϵ), eps_exploration(σ2, ϵ)
         a = action_idx_from_probs(μ1, μ2)
         sp_idx = tree.s_children[s_idx][a]
@@ -364,9 +616,22 @@ function tree_policy(::RegretMatchingSearch, params::MCTSSearch, tree::SearchTre
     if iszero(tree.n_s[s_idx]) || isempty(tree.r[s_idx])
         return oracle_policy(params, game, tree, s_idx)
     end
-    x = normalize_or_uniform!(copy(tree.policy_sum[1][s_idx]))
-    y = normalize_or_uniform!(copy(tree.policy_sum[2][s_idx]))
-    return x, y
+    x = copy(tree.policy_sum[1][s_idx])
+    y = copy(tree.policy_sum[2][s_idx])
+    if read_time_transfer(params)
+        # Report the weighted average of the approximate-transfer lemma:
+        # (m σ̄̂ + Σₜ σₜ)/(m + T₂), with the same gated mass m the node's regret
+        # matching used. Under `:warmstart` the prior enters the regret
+        # accumulator with mass m but the emitted average divides by T₂ alone,
+        # so the deployed strategy is not the object the lemma bounds.
+        m = transfer_mass(params, tree, s_idx, discount(game)) *
+            params.strategy_prior_weight
+        if !iszero(m)
+            x .+= m .* tree.strategy_init[1][s_idx]
+            y .+= m .* tree.strategy_init[2][s_idx]
+        end
+    end
+    return normalize_or_uniform!(x), normalize_or_uniform!(y)
 end
 
 node_value(params::MCTSSearch, tree::SearchTree, game::MG, s_idx::Int, x, y) =

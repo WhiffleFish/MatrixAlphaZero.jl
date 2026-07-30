@@ -222,6 +222,60 @@ end
     @test isapprox(plus_tree.regret[2][1], prior_scale .* [0.0, 0.9]; atol=1e-6)
     @test all(iszero, plus_tree.fresh_regret[1][1])
 
+    # Uniform tempering. Because regret matching normalizes, the sharpness of a
+    # freshly expanded node's strategy is otherwise fixed by the residual's shape
+    # and cannot be reached by `prior_scale` or the reach attenuation. Tempering
+    # redistributes the transferred vector toward uniform at fixed total mass.
+    tempered(ν; reach_power=0.0, scale=prior_scale) = AZ.MCTSSearch(
+        tree_queries=0,
+        max_depth=2,
+        prior_scale=scale,
+        strategy_prior_weight=0.0,
+        statistic_prior_weight=0.0,
+        prior_reach_power=reach_power,
+        transfer_mode=:tempered,
+        transfer_temper=ν,
+        oracle=transfer_oracle,
+        search_style=AZ.RegretMatchingSearch(method=AZ.Plus()),
+    )
+    function tempered_regret(ν; kwargs...)
+        p = tempered(ν; kwargs...)
+        t = AZ.Tree(p, game, false)
+        AZ.expand_s!(t, 1, game, transfer_oracle)
+        AZ.warmstart_node!(p, t, 1, game)
+        return t.regret[1][1]
+    end
+
+    # ν = 0 reproduces `:warmstart` exactly.
+    @test tempered_regret(0.0) ≈ prior_scale .* [0.8, 0.0]
+    # Total mass is preserved at every tempering weight, so the transferred mass
+    # stays the wT₁·R̄̂ the theory prescribes.
+    for ν in (0.0, 0.1, 1.0, 100.0)
+        @test sum(tempered_regret(ν)) ≈ prior_scale * 0.8
+    end
+    # Tempering moves mass toward uniform monotonically, and therefore cannot
+    # raise the regret-matching potential Φ that the weight condition bounds.
+    spreads = [maximum(tempered_regret(ν)) - minimum(tempered_regret(ν))
+               for ν in (0.0, 0.03, 0.1, 0.3, 1.0, 10.0)]
+    @test issorted(spreads; rev=true)
+    potentials = [sum(abs2, tempered_regret(ν)) for ν in (0.0, 0.1, 1.0, 10.0)]
+    @test issorted(potentials; rev=true)
+    # Large ν leaves a uniform vector of the same small mass, which one real
+    # iteration overwhelms: that limit is the cold value-only solver, not a node
+    # frozen at uniform.
+    @test tempered_regret(1e6) ≈ fill(prior_scale * 0.8 / 2, 2) rtol = 1e-3
+    # With the reach exponent active, tempering is stronger at low reach, so the
+    # attenuation finally reaches the played strategy rather than only the mass.
+    near = AZ.regret_matching_policy(tempered_regret(0.1; reach_power=1.0))
+    let p = tempered(0.1; reach_power=1.0)
+        t = AZ.Tree(p, game, false)
+        AZ.expand_s!(t, 1, game, transfer_oracle)
+        AZ.warmstart_node!(p, t, 1, game; learned_reach=0.01)
+        far = AZ.regret_matching_policy(t.regret[1][1])
+        @test maximum(far) < maximum(near)
+        @test maximum(far) ≈ 0.5 atol = 0.05
+    end
+
     # Inference priors are never subtracted back out to construct learning
     # targets. Training rejects nonzero prior_scale at the solver boundary.
     @test_throws ArgumentError AZ.mcts_root_targets(params, tree, game, 1)

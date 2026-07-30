@@ -36,6 +36,7 @@ const SCRIPT_DIR = @__DIR__
 const AAAI_COLUMN_WIDTH_BP = 238
 const AAAI_BODY_PLOTS_POINTSIZE = 6
 const AAAI_FIGURE_HEIGHT_BP = 493
+const AAAI_SINGLE_PANEL_HEIGHT_BP = 270
 
 struct DepthState
     inner::JointDubinState
@@ -772,6 +773,24 @@ function save_heatmaps(
     )
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.png"))
     savefig(figure, joinpath(output, "regret_transfer_heatmaps.pdf"))
+
+    gap_reduction_figure = plot(
+        p_improvement;
+        title="Gap reduction",
+        size=(AAAI_COLUMN_WIDTH_BP, AAAI_SINGLE_PANEL_HEIGHT_BP),
+        titlefontsize=AAAI_BODY_PLOTS_POINTSIZE,
+        guidefontsize=AAAI_BODY_PLOTS_POINTSIZE,
+        tickfontsize=AAAI_BODY_PLOTS_POINTSIZE,
+        margin=3Plots.mm, left_margin=5Plots.mm, bottom_margin=5Plots.mm,
+    )
+    savefig(
+        gap_reduction_figure,
+        joinpath(output, "regret_transfer_gap_reduction.png"),
+    )
+    savefig(
+        gap_reduction_figure,
+        joinpath(output, "regret_transfer_gap_reduction.pdf"),
+    )
     return figure
 end
 
