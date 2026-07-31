@@ -1,0 +1,20 @@
+name = "CleanRL"
+uuid = "d512bf86-4aca-4ede-a06a-81c43f0328ad"
+version = "0.1.0"
+authors = ["Sasha Abramowitz <reallysasha@gmail.com>"]
+
+[deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
+LoggingFormats = "98105f81-4425-4516-93fd-1664fb551ab6"
+POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+TensorBoardLogger = "899adc3e-224a-11e9-021f-63837185c80f"
+
+[compat]
+POMDPs = "1.0.0"

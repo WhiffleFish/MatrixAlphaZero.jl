@@ -2,7 +2,6 @@ Manifest.toml
 .vscode
 scratch
 .DS_Store
-*.jld2
 
 *.png
 *.pdf

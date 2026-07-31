@@ -1,0 +1,25 @@
+name = "SatelliteDynamics"
+uuid = "0e7c1a32-1b9f-5532-88a4-e668712d6a4c"
+authors = ["Duncan Eddy <duncan.eddy@gmail.com> and contributors"]
+version = "0.5.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SOFA = "ad3d3fd0-b5f2-51ee-b274-8cdbe62317e2"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
+
+[compat]
+SOFA = "1"
+StaticArrays = "1"
+Suppressor = "0.2"
+Dates = "1"
+LinearAlgebra = "1"
+Logging = "1"
+Printf = "1"
+Random = "1"
+julia = "1"

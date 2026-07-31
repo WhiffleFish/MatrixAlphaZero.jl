@@ -1,0 +1,22 @@
+name = "POSGModels"
+uuid = "2f6c3e8a-7099-41d6-b18b-6a2563e2aaa9"
+authors = ["WhiffleFish <tylertronics@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MarkovGames = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
+POMDPTools = "7588e00f-9cae-40de-98dc-e0c70c48cdd7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[sources]
+MarkovGames = {path = "../MarkovGames.jl"}
+
+[compat]
+LinearAlgebra = "1.11.0"
+POMDPTools = "1"
+Random = "1"
+RecipesBase = "1"
+StaticArrays = "1"

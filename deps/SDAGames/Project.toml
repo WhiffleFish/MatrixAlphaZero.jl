@@ -1,0 +1,36 @@
+name = "SDAGames"
+uuid = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
+authors = ["WhiffleFish <tylertronics@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LowLevelParticleFilters = "d9d29d28-c116-5dba-9239-57a5fe23875b"
+MarkovGames = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
+PDMats = "90014a1f-27ba-587c-ab20-58faa44d9150"
+POMDPTools = "7588e00f-9cae-40de-98dc-e0c70c48cdd7"
+POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
+ParticleFilters = "c8b314e2-9260-5cf8-ae76-3be7461ca6d0"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+SatelliteDynamics = "0e7c1a32-1b9f-5532-88a4-e668712d6a4c"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
+
+[sources]
+MarkovGames = {path = "../MarkovGames.jl"}
+SatelliteDynamics = {path = "../SatelliteDynamics.jl"}
+
+[compat]
+Dates = "1.11.0"
+LaTeXStrings = "1.4.0"
+LowLevelParticleFilters = "3.12.3"
+ProgressMeter = "1"
+StatsPlots = "0.15"
