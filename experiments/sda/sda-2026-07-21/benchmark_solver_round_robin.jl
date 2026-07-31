@@ -4,7 +4,7 @@ Pkg.activate(joinpath(@__DIR__, "..", ".."))
 using DelimitedFiles
 using Random
 
-include(joinpath(@__DIR__, "ppo_solver_response_utilities.jl"))
+include(joinpath(@__DIR__, "round_robin_support.jl"))
 
 const ROUND_ROBIN_OUTPUT_DIR = joinpath(
     @__DIR__,
@@ -218,8 +218,8 @@ function main_round_robin(args=ARGS)
     runs > 0 || error("--runs must be positive")
     queries > 0 || error("--tree-queries must be positive")
     max_depth > 0 || error("--max-depth must be positive")
-    0 < max_steps <= MAX_PPO_STEPS ||
-        error("--max-steps must be in 1:$(MAX_PPO_STEPS)")
+    0 < max_steps <= MAX_EPISODE_STEPS ||
+        error("--max-steps must be in 1:$(MAX_EPISODE_STEPS)")
     0 <= search_epsilon <= 1 ||
         error("--search-epsilon must be in [0, 1]")
     0 <= prior_scale <= queries ||
