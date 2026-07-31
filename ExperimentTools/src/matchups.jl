@@ -112,40 +112,71 @@ function evaluate_joint_policy(
         eps::Float64=0.0,
         initialstates=nothing,
         metadata=NamedTuple(),
-        pool=nothing,
-        show_progress::Bool=true,
+        show_progress::Bool=false,
         proc_warn::Bool=false,
-        parallel::Bool=true,
+        parallel::Bool=false,
     )
+    parallel && error("Only serial evaluation is retained")
     rollout_accumulators = isnothing(accumulators) ? _default_rollout_accumulators() : accumulators
     batch_stats = isnothing(batch_accumulators) ? _default_batch_accumulators(game) : batch_accumulators
-    result = if parallel
-        run_stats_parallel(
-            game,
-            joint_policy,
-            n;
-            accumulators = rollout_accumulators,
-            batch_accumulators = batch_stats,
-            max_steps,
-            eps,
-            initialstates,
-            metadata,
-            pool,
-            show_progress,
-            proc_warn,
-        )
-    else
-        _serial_stat_rollouts(
-            game,
-            joint_policy,
-            n;
-            accumulators = rollout_accumulators,
-            batch_accumulators = batch_stats,
-            max_steps,
-            eps,
-            initialstates,
-            metadata,
-        )
-    end
+    result = _serial_stat_rollouts(
+        game,
+        joint_policy,
+        n;
+        accumulators=rollout_accumulators,
+        batch_accumulators=batch_stats,
+        max_steps,
+        eps,
+        initialstates,
+        metadata,
+    )
     return merge((; n=Int(n), max_steps, eps), result)
 end
+struct ZeroSearchOracle
+    na::NTuple{2,Int}
+end
+
+struct JointPolicy{P<:Tuple} <: Policy
+    policies::P
+    JointPolicy(policies...) = new{typeof(policies)}(policies)
+end
+
+function MarkovGames.behavior(policy::JointPolicy, state)
+    return ProductDistribution(map(p -> behavior(p, state), policy.policies))
+end
+
+struct SinglePlayerAlphaZeroPolicy{P<:AlphaZeroPlanner} <: Policy
+    policy::P
+    player::Int
+end
+
+MarkovGames.behavior(policy::SinglePlayerAlphaZeroPolicy, state) =
+    behavior(policy.policy, state)[policy.player]
+
+ZeroSearchOracle(game::MG) = ZeroSearchOracle(Tuple(length.(actions(game))))
+
+uniform_pair(oracle::ZeroSearchOracle) = (
+    fill(1.0f0 / oracle.na[1], oracle.na[1]),
+    fill(1.0f0 / oracle.na[2], oracle.na[2]),
+)
+
+AZ.state_value(::ZeroSearchOracle, game, state) = 0.0
+AZ.batch_state_value(::ZeroSearchOracle, game, states) = fill(0.0, length(states))
+AZ.value(::ZeroSearchOracle, input::AbstractVector) = Float32[0.0]
+AZ.value(::ZeroSearchOracle, input::AbstractMatrix) = zeros(Float32, 1, size(input, 2))
+AZ.state_policy(oracle::ZeroSearchOracle, game, state) = uniform_pair(oracle)
+AZ.batch_state_policy(oracle::ZeroSearchOracle, game, states) = (
+    fill(1.0f0 / oracle.na[1], oracle.na[1], length(states)),
+    fill(1.0f0 / oracle.na[2], oracle.na[2], length(states)),
+)
+AZ.state_strategy(oracle::ZeroSearchOracle, game, state) = uniform_pair(oracle)
+AZ.batch_state_strategy(oracle::ZeroSearchOracle, game, states) =
+    AZ.batch_state_policy(oracle, game, states)
+AZ.state_regret(oracle::ZeroSearchOracle, game, state) = (
+    zeros(Float32, oracle.na[1]),
+    zeros(Float32, oracle.na[2]),
+)
+AZ.batch_state_regret(oracle::ZeroSearchOracle, game, states) = (
+    zeros(Float32, oracle.na[1], length(states)),
+    zeros(Float32, oracle.na[2], length(states)),
+)

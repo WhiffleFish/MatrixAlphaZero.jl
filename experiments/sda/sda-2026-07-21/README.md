@@ -33,9 +33,9 @@ julia --project=experiments \
 ```
 
 The benchmark requires the retained oracle architecture, iteration-1221
-checkpoint, and fitted softplus regret model. `experiment.jl` and `train.jl`
-define the original training run; `generate_regret_fit_dataset.jl` and
-`fit_regret_hurdle.jl` define the post-training regret refit.
+checkpoint, and fitted softplus regret model. `train.jl` defines the original
+training run; `generate_regret_fit_dataset.jl` and `fit_regret_softplus.jl`
+define the post-training regret refit.
 
 The committed CSV files contain the paper's 1,000-rollout results. Their
 `checkpoint` field uses a repository-relative artifact path.

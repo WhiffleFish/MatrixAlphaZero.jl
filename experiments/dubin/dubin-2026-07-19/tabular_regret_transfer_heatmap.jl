@@ -36,6 +36,10 @@ const SCRIPT_DIR = @__DIR__
 const AAAI_COLUMN_WIDTH_BP = 238
 const AAAI_BODY_PLOTS_POINTSIZE = 6
 const AAAI_FIGURE_HEIGHT_BP = 493
+const PAPER_ROOT = JointDubinState(
+    SA[1.806285497972572, 2.411204504285737, -0.2705116498710156],
+    SA[4.870234852067901, 2.5076120564966677, -2.6982903330828334],
+)
 
 struct DepthState
     inner::JointDubinState
@@ -253,12 +257,8 @@ end
 
 function parse_cli(args)
     cfg = Dict{String,Any}(
-        "candidates" => 32,
-        "finalists" => 3,
-        "screen_depth" => 3,
         "depth" => 5,
         "iterations" => 64,
-        "probe_trials" => 8,
         "trials" => 32,
         "leaf_errors" => [0.0, 0.20, 0.40, 0.60, 0.80, 1.00],
         "transfer_errors" => [0.0, 0.025, 0.05, 0.10, 0.20, 0.40],
@@ -299,21 +299,17 @@ function parse_cli(args)
     end
     if cfg["test"]
         merge!(cfg, Dict(
-            "candidates" => 4,
-            "finalists" => 1,
-            "screen_depth" => 2,
             "depth" => 2,
             "iterations" => 8,
-            "probe_trials" => 2,
             "trials" => 2,
             "leaf_errors" => [0.0, 0.2],
             "transfer_errors" => [0.0, 0.2],
             "output" => joinpath(abspath(cfg["output"]), "smoke"),
         ))
     end
-    cfg["depth"] >= cfg["screen_depth"] > 0 || error("Require depth >= screen-depth > 0")
+    cfg["depth"] > 0 || error("depth must be positive")
     cfg["iterations"] > 1 || error("iterations must exceed one")
-    cfg["trials"] > 0 && cfg["probe_trials"] > 0 || error("trial counts must be positive")
+    cfg["trials"] > 0 || error("trials must be positive")
     all(e -> 0 <= e <= 1.0, cfg["leaf_errors"]) || error("leaf errors must be in [0, 1]")
     all(e -> 0 <= e <= 0.5, cfg["transfer_errors"]) || error("transfer errors must be in [0, 0.5]")
     0 <= cfg["epsilon"] <= 1 || error("epsilon must be in [0, 1]")
@@ -550,79 +546,6 @@ function condition_row(leaf_error, transfer_error, trial, baseline, transferred)
     )
 end
 
-function evaluate_condition(tree, cfg, leaf_error, transfer_error, trial)
-    baseline = evaluate_baseline(tree, cfg, trial)
-    source = evaluate_source(tree, cfg, leaf_error, trial)
-    transferred = evaluate_transfer(tree, cfg, source, transfer_error, trial)
-    return condition_row(leaf_error, transfer_error, trial, baseline, transferred)
-end
-
-function entropy(p)
-    return -sum(x > 0 ? x * log(x) : 0.0 for x in p)
-end
-
-function root_nonobviousness(tree::FiniteTree)
-    root = 1
-    myopic_x, myopic_y, _ = solve_zero_sum(tree.rewards[root])
-    exact_x, exact_y = tree.exact_strategy[root]
-    return 0.25 * (sum(abs.(myopic_x .- exact_x)) + sum(abs.(myopic_y .- exact_y)))
-end
-
-function probe_state(inner_game, state, depth, cfg)
-    tree = build_tree(inner_game, state, depth)
-    rows = [evaluate_condition(tree, cfg, 0.0, 0.0, trial)
-            for trial in 1:cfg["probe_trials"]]
-    baseline = mean(getproperty.(rows, :baseline_gap))
-    transferred = mean(getproperty.(rows, :transfer_gap))
-    improvement = mean(getproperty.(rows, :improvement))
-    nonobviousness = root_nonobviousness(tree)
-    root_entropy = 0.5 * sum(entropy, tree.exact_strategy[1])
-    score = improvement * (0.5 + nonobviousness) + 0.01 * baseline
-    return (; tree, baseline, transferred, improvement, nonobviousness, root_entropy, score)
-end
-
-wrap_angle(x) = mod(x + π, 2π) - π
-
-function candidate_states(game::DubinMG, count::Int, seed::Int)
-    rng = MersenneTwister(seed)
-    candidates = JointDubinState[
-        JointDubinState(SA[1.0, 1.0, deg2rad(45)], SA[8.0, 7.0, deg2rad(180)]),
-    ]
-    center = game.goal.center
-    while length(candidates) < count
-        angle = 2π * rand(rng)
-        radius = 2.0 + 3.0 * rand(rng)
-        attacker_xy = clamp.(center .+ radius .* SA[cos(angle), sin(angle)], SA[0.25, 0.25], game.floor .- 0.25)
-        toward_goal = atan(center[2] - attacker_xy[2], center[1] - attacker_xy[1])
-        midpoint = 0.5 .* (attacker_xy .+ center)
-        perpendicular = SA[-sin(toward_goal), cos(toward_goal)]
-        defender_xy = clamp.(
-            midpoint .+ (4rand(rng) - 2) .* perpendicular .+ (2rand(rng) - 1) .* SA[cos(toward_goal), sin(toward_goal)],
-            SA[0.25, 0.25],
-            game.floor .- 0.25,
-        )
-        norm(attacker_xy - defender_xy) > 1.2 || continue
-        attacker_heading = wrap_angle(toward_goal + (2rand(rng) - 1) * π / 2)
-        toward_attacker = atan(attacker_xy[2] - defender_xy[2], attacker_xy[1] - defender_xy[1])
-        defender_heading = wrap_angle(toward_attacker + (2rand(rng) - 1) * π / 2)
-        push!(candidates, JointDubinState(
-            SA[attacker_xy[1], attacker_xy[2], attacker_heading],
-            SA[defender_xy[1], defender_xy[2], defender_heading],
-        ))
-    end
-    return candidates
-end
-
-function state_row(rank, state, result, stage)
-    return Any[
-        rank, stage,
-        state.attacker[1], state.attacker[2], state.attacker[3],
-        state.defender[1], state.defender[2], state.defender[3],
-        result.baseline, result.transferred, result.improvement,
-        result.nonobviousness, result.root_entropy, result.score,
-    ]
-end
-
 function write_csv(path, header, rows)
     table = Matrix{Any}(undef, length(rows) + 1, length(header))
     table[1, :] .= header
@@ -631,29 +554,6 @@ function write_csv(path, header, rows)
     end
     writedlm(path, table, ',')
     return path
-end
-
-function select_state(inner_game, cfg)
-    candidates = candidate_states(inner_game, cfg["candidates"], cfg["seed"])
-    progress = Progress(length(candidates); desc="screening Dubin states", showspeed=true)
-    screened = map(enumerate(candidates)) do (i, state)
-        result = probe_state(inner_game, state, cfg["screen_depth"], cfg)
-        next!(progress; showvalues=[(:candidate, i), (:gain, round(result.improvement; digits=4))])
-        (; state, result)
-    end
-    finish!(progress)
-    sort!(screened; by=x -> x.result.score, rev=true)
-    finalists = first(screened, min(cfg["finalists"], length(screened)))
-
-    progress = Progress(length(finalists); desc="validating finalists", showspeed=true)
-    validated = map(enumerate(finalists)) do (rank, candidate)
-        result = probe_state(inner_game, candidate.state, cfg["depth"], cfg)
-        next!(progress; showvalues=[(:finalist, rank), (:gain, round(result.improvement; digits=4))])
-        (; state=candidate.state, result)
-    end
-    finish!(progress)
-    sort!(validated; by=x -> x.result.score, rev=true)
-    return first(validated), screened, validated
 end
 
 function sem(values)
@@ -775,34 +675,6 @@ function save_heatmaps(
     return figure
 end
 
-function save_selected_state(output, inner_game, state, tree)
-    exact = tree.exact_strategy[1]
-    figure = plot(
-        inner_game,
-        state,
-        exact[1],
-        exact[2];
-        title="Selected Dubin state: depth-$(tree.game.horizon) root policy",
-        size=(650, 600),
-    )
-    savefig(figure, joinpath(@__DIR__, output, "selected_state.png"))
-    savefig(figure, joinpath(@__DIR__, output, "selected_state.pdf"))
-
-    myopic = solve_zero_sum(tree.rewards[1])
-    header = ["player", "action", "myopic_probability", "depth_solution_probability"]
-    rows = Any[]
-    for player in 1:2, action in eachindex(exact[player])
-        push!(rows, Any[
-            player,
-            action,
-            myopic[player][action],
-            exact[player][action],
-        ])
-    end
-    write_csv(joinpath(@__DIR__, output, "selected_root_policy.csv"), header, rows)
-    return figure
-end
-
 function main()
     cfg = parse_cli(ARGS)
     output = abspath(cfg["output"])
@@ -810,36 +682,13 @@ function main()
     inner_game = DubinMG(V=(1.0, 1.0))
 
     println("Network-free Dubin regret-transfer heatmap")
-    println("threads=$(nthreads()) candidates=$(cfg["candidates"]) depth=$(cfg["depth"]) T1=T2=$(cfg["iterations"])")
-    selected, screened, validated = select_state(inner_game, cfg)
-    state = selected.state
-    tree = selected.result.tree
+    println("threads=$(nthreads()) depth=$(cfg["depth"]) T1=T2=$(cfg["iterations"])")
+    state = PAPER_ROOT
+    tree = build_tree(inner_game, state, cfg["depth"])
     @printf(
         "Selected state: attacker=(%.3f, %.3f, %.3f) defender=(%.3f, %.3f, %.3f)\n",
         state.attacker..., state.defender...,
     )
-    @printf(
-        "Perfect-fit probe: ordinary gap %.4f, transfer gap %.4f, gain %.4f, nonobviousness %.4f\n",
-        selected.result.baseline, selected.result.transferred,
-        selected.result.improvement, selected.result.nonobviousness,
-    )
-
-    state_header = [
-        "rank", "stage", "attacker_x", "attacker_y", "attacker_heading",
-        "defender_x", "defender_y", "defender_heading",
-        "baseline_gap", "transfer_gap", "improvement", "nonobviousness",
-        "root_entropy", "score",
-    ]
-    state_rows = Any[]
-    append!(state_rows, [state_row(i, x.state, x.result, "screen") for (i, x) in enumerate(screened)])
-    append!(state_rows, [state_row(i, x.state, x.result, "full") for (i, x) in enumerate(validated)])
-    write_csv(joinpath(@__DIR__, output, "candidate_states.csv"), state_header, state_rows)
-    write_csv(
-        joinpath(@__DIR__, output, "selected_state.csv"),
-        state_header,
-        [state_row(1, state, selected.result, "selected")],
-    )
-    save_selected_state(output, inner_game, state, tree)
 
     leaf_errors = sort(Float64.(cfg["leaf_errors"]))
     transfer_errors = sort(Float64.(cfg["transfer_errors"]))
