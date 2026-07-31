@@ -1,10 +1,9 @@
-Manifest.toml
 .vscode
 scratch
 .DS_Store
 
 *.png
-*.pdf
+
 *.gif
 *.svg
 
