@@ -13,3 +13,6 @@
 [submodule "deps/SatelliteDynamics.jl"]
 	path = deps/SatelliteDynamics.jl
 	url = git@github.com:WhiffleFish/SatelliteDynamics.jl.git
+[submodule "deps/CleanRL.jl"]
+	path = deps/CleanRL.jl
+	url = git@github.com:WhiffleFish/CleanRL.jl.git
