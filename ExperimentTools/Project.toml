@@ -1,7 +1,7 @@
 name = "ExperimentTools"
 uuid = "7fde32a4-1ade-4293-987a-ae7babf65c50"
 version = "0.1.0"
-authors = ["WhiffleFish <tylertronics@gmail.com>"]
+authors = []
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"

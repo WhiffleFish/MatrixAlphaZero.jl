@@ -1,6 +1,6 @@
 name = "MarkovGames"
 uuid = "d061fddc-c47a-4172-865e-fdb23de1c5fa"
-authors = ["WhiffleFish <tylertronics@gmail.com>"]
+authors = []
 version = "0.2.1"
 
 [deps]

@@ -1,7 +1,7 @@
 name = "MatrixAlphaZero"
 uuid = "5b242d70-f97d-4fa7-8667-f0513ab0a030"
 version = "0.1.0"
-authors = ["WhiffleFish <tylertronics@gmail.com>"]
+authors = []
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"

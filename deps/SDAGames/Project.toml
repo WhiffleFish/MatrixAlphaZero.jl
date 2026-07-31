@@ -1,6 +1,6 @@
 name = "SDAGames"
 uuid = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
-authors = ["WhiffleFish <tylertronics@gmail.com>"]
+authors = []
 version = "0.1.0"
 
 [deps]
