@@ -770,8 +770,8 @@ function save_heatmaps(
         tickfontsize=AAAI_BODY_PLOTS_POINTSIZE,
         margin=3Plots.mm, left_margin=5Plots.mm, bottom_margin=5Plots.mm,
     )
-    savefig(figure, joinpath(output, "regret_transfer_heatmaps.png"))
-    savefig(figure, joinpath(output, "regret_transfer_heatmaps.pdf"))
+    savefig(figure, joinpath(@__DIR__, output, "regret_transfer_heatmaps.png"))
+    savefig(figure, joinpath(@__DIR__, output, "regret_transfer_heatmaps.pdf"))
     return figure
 end
 
@@ -785,8 +785,8 @@ function save_selected_state(output, inner_game, state, tree)
         title="Selected Dubin state: depth-$(tree.game.horizon) root policy",
         size=(650, 600),
     )
-    savefig(figure, joinpath(output, "selected_state.png"))
-    savefig(figure, joinpath(output, "selected_state.pdf"))
+    savefig(figure, joinpath(@__DIR__, output, "selected_state.png"))
+    savefig(figure, joinpath(@__DIR__, output, "selected_state.pdf"))
 
     myopic = solve_zero_sum(tree.rewards[1])
     header = ["player", "action", "myopic_probability", "depth_solution_probability"]
@@ -799,7 +799,7 @@ function save_selected_state(output, inner_game, state, tree)
             exact[player][action],
         ])
     end
-    write_csv(joinpath(output, "selected_root_policy.csv"), header, rows)
+    write_csv(joinpath(@__DIR__, output, "selected_root_policy.csv"), header, rows)
     return figure
 end
 
@@ -833,9 +833,9 @@ function main()
     state_rows = Any[]
     append!(state_rows, [state_row(i, x.state, x.result, "screen") for (i, x) in enumerate(screened)])
     append!(state_rows, [state_row(i, x.state, x.result, "full") for (i, x) in enumerate(validated)])
-    write_csv(joinpath(output, "candidate_states.csv"), state_header, state_rows)
+    write_csv(joinpath(@__DIR__, output, "candidate_states.csv"), state_header, state_rows)
     write_csv(
-        joinpath(output, "selected_state.csv"),
+        joinpath(@__DIR__, output, "selected_state.csv"),
         state_header,
         [state_row(1, state, selected.result, "selected")],
     )
@@ -869,18 +869,18 @@ function main()
 
     trial_header = String.(propertynames(first(rows)))
     trial_rows = [Any[getproperty(row, Symbol(name)) for name in trial_header] for row in rows]
-    write_csv(joinpath(output, "trials.csv"), trial_header, trial_rows)
+    write_csv(joinpath(@__DIR__, output, "trials.csv"), trial_header, trial_rows)
     summary, _, transferred, improvement = summarize_cells(rows, leaf_errors, transfer_errors)
     summary_header = String.(propertynames(first(summary)))
     summary_rows = [Any[getproperty(row, Symbol(name)) for name in summary_header] for row in summary]
-    write_csv(joinpath(output, "summary.csv"), summary_header, summary_rows)
+    write_csv(joinpath(@__DIR__, output, "summary.csv"), summary_header, summary_rows)
 
     ordinary_gaps = [baselines[trial].gap for trial in 1:cfg["trials"]]
     ordinary_mean = mean(ordinary_gaps)
     ordinary_std = std(ordinary_gaps)
     ordinary_sem = sem(ordinary_gaps)
     write_csv(
-        joinpath(output, "ordinary_rm_plus_summary.csv"),
+        joinpath(@__DIR__, output, "ordinary_rm_plus_summary.csv"),
         ["evaluations", "mean_nash_gap", "std_nash_gap", "sem_nash_gap"],
         [Any[length(ordinary_gaps), ordinary_mean, ordinary_std, ordinary_sem]],
     )
@@ -889,7 +889,7 @@ function main()
         ordinary_mean, ordinary_std,
     )
 
-    open(joinpath(output, "config.txt"), "w") do io
+    open(joinpath(@__DIR__, output, "config.txt"), "w") do io
         for key in sort!(collect(keys(cfg)))
             println(io, key, "=", cfg[key])
         end

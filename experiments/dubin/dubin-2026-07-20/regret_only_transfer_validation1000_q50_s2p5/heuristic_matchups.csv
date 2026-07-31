@@ -1,5 +1,0 @@
-name,scale,backup,regret_weight,strategy_weight,statistic_weight,reach_power,search_player,runs,reward,stderr_reward,mean_steps,attacker_goal_rate,tagged_rate,timeout_rate,queries,max_depth,max_steps,search_epsilon,action_epsilon,elapsed_seconds,delta_vs_value_only
-value_only_mean,0.0,mean,0.0,0.0,0.0,1.0,1,1000,0.3561278359623399,0.017307971568274502,9.978,0.818,0.179,0.003,50,5,50,0.1,0.0,6.416146334,0.0
-value_only_mean,0.0,mean,0.0,0.0,0.0,1.0,2,1000,0.7033261468750116,0.012821439360491288,5.07,0.07,0.93,0.0,50,5,50,0.1,0.0,2.120193208,0.0
-regret_only_mean_s2.5,2.5,mean,1.0,0.0,0.0,1.0,1,1000,0.3311395952236421,0.01762246670854402,10.09,0.806,0.192,0.002,50,5,50,0.1,0.0,7.26142525,-0.024988240738697765
-regret_only_mean_s2.5,2.5,mean,1.0,0.0,0.0,1.0,2,1000,0.7446216137500128,0.01030627135313168,5.044,0.044,0.956,0.0,50,5,50,0.1,0.0,3.637190875,0.041295466875001186
