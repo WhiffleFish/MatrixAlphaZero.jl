@@ -22,15 +22,17 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
+SatelliteDynamics = "0e7c1a32-1b9f-5532-88a4-e668712d6a4c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Wandb = "ad70616a-06c9-5745-b1f1-6a5f42545108"
 
 [sources]
-CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
-MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
+CleanRL = {path = "../deps/CleanRL.jl"}
+MarkovGames = {path = "../deps/MarkovGames.jl"}
 MatrixAlphaZero = {path = ".."}
-POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
-SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}
+POSGModels = {path = "../deps/POSGModels.jl"}
+SDAGames = {path = "../deps/SDAGames"}
+SatelliteDynamics = {path = "../deps/SatelliteDynamics.jl"}
 
 [compat]
 ArgParse = "1.2.0"
