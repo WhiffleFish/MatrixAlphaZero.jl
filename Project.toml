@@ -19,8 +19,8 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [sources]
-MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
-POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
+MarkovGames = {path = "deps/MarkovGames.jl"}
+POSGModels = {path = "deps/POSGModels.jl"}
 
 [compat]
 Distributed = "1.11.0"
