@@ -18,7 +18,7 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 
 [sources]
-CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
+CleanRL = {rev = "new-exploitability", url = "https://github.com/WhiffleFish/CleanRL.jl"}
 ExperimentTools = {path = "../ExperimentTools"}
 FictitiousPlay = {rev = "main", url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
 MarkovGames = {rev = "main", url = "git@github.com:WhiffleFish/MarkovGames.jl.git"}
