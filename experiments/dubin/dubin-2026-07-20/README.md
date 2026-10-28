@@ -30,7 +30,60 @@ Use `--test` for the standard short smoke run. Override deployment evaluation
 strength with `--prior_scale VALUE` or its search budget with
 `--inference_tree_queries VALUE`.
 
-## PPO response utilities
+## PPO best responses to the paper solvers
+
+`ppo_best_response.jl` approximates best responses to the three solvers in the
+paper's round-robin table (`zero_oracle` = SM-MCTS-A, `value_oracle` =
+SM-AZ (-RT), `full_solver` = SM-AZ). The solvers are built by
+`round_robin_search` with the table's settings: 50 queries, depth 5, search
+epsilon 0.1, and regret-only transfer at `prior_scale=2.5`.
+
+For each solver and seat:
+
+1. Behavior-clone the solver's own seat from self-play. The actor is fit to its
+   strategy and the critic to its discounted return.
+2. Train PPO from that clone (`--ppo-inits bc`, the default; add `scratch` for a
+   cold start). PPO's discount defaults to the game's (0.95).
+3. Score candidates on 200 selection rollouts. The candidates are:
+   - the PPO policy, sampled and greedy;
+   - the clone;
+   - every solver's seat, including the solver's own;
+   - the Dubins heuristic.
+4. Report the best candidate on 1000 fresh rollouts, paired with the solver's own
+   seat.
+
+Training starts from a 50/50 mixture of the reference state and uniform random
+states (`--train-reference-fraction`). Evaluation uses the round robin's fixed
+reference state.
+
+The value of any fixed responder lower-bounds the best-response value, so in
+`summary.csv`:
+
+- `nashconv_lower_bound` and `paired_gain_sum` both estimate a lower bound on
+  NashConv;
+- the paired gain over the solver's own seat has the smaller standard error.
+
+`candidates.csv` lists every candidate's selection score. `seats.csv` records
+the selected responder, timings, and settings.
+
+A single PPO seed per seat is the default. Run with threads, since PPO
+environments, behavior-cloning episodes, and evaluation rollouts are threaded:
+
+```bash
+julia -t auto --project=experiments \
+  experiments/dubin/dubin-2026-07-20/ppo_best_response.jl
+```
+
+Use `--solvers full_solver --players 1` to run a single seat, and `--test` for a
+smoke test. Results go to `ppo_best_response_q50_scale2p5/`. Behavior-cloned
+warm starts need a CleanRL.jl that accepts `initial_actor` / `initial_critic`.
+
+## PPO response utilities (superseded)
+
+These runs used 100-query solvers with `prior_scale` 100 (or 5) and PPO
+`gamma=0.99`, against the game's 0.95. They do not match the paper's tables. PPO
+from a cold start also fell below the solvers' own seats against the learned
+solvers. `ppo_best_response.jl` replaces this script for paper results.
 
 `ppo_solver_response_utilities.jl` trains one PPO response for each player
 against each of three 100-query solvers: a zero oracle, the learned value oracle

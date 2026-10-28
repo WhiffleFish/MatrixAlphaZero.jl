@@ -13,6 +13,7 @@
     normalize_advantages::Bool = true
     clip_value_loss::Bool = true
     anneal_lr::Bool = true
+    target_kl::Union{Nothing,Float32} = nothing
     max_steps::Union{Nothing,Int} = 50
     seed::Int = 0
     name::String = "ppo_best_response"
@@ -88,6 +89,20 @@ function MarkovGames.behavior(policy::ActorPlayerPolicy, s)
     return SparseCat(actions(policy.game)[policy.player], probs)
 end
 
+# Plays the actor's most likely action instead of sampling from it.
+struct GreedyActorPlayerPolicy{G,A} <: Policy
+    game::G
+    player::Int
+    actor::A
+end
+
+function MarkovGames.behavior(policy::GreedyActorPlayerPolicy, s)
+    probs = actor_probs(policy.actor, policy.game, s)
+    onehot = zeros(Float64, length(probs))
+    onehot[argmax(probs)] = 1.0
+    return SparseCat(actions(policy.game)[policy.player], onehot)
+end
+
 struct PPOBestResponseMDP{G,P,S,A,D} <: POMDPs.MDP{S,A}
     game::G
     fixed_policy::P
@@ -146,6 +161,8 @@ function _cleanrl_ppo_config(config::PPOBestResponseConfig)
         normalize_advantages = config.normalize_advantages,
         clip_value_loss = config.clip_value_loss,
         anneal_lr = config.anneal_lr,
+        target_kl = config.target_kl,
+        seed = config.seed,
         name = config.name,
         log_dir = config.log_dir,
     )
@@ -171,10 +188,19 @@ function train_ppo_best_response(
         br_player::Int;
         config::PPOBestResponseConfig = PPOBestResponseConfig(),
         initialstate_dist = initialstate(game),
+        initial_actor = nothing,
+        initial_critic = nothing,
     )
     mdp = PPOBestResponseMDP(game, fixed_policy, br_player; initialstate_dist)
     Random.seed!(config.seed)
-    actor, critic = CleanRL.ppo(_ppo_env_factory(mdp, config), _cleanrl_ppo_config(config))
+    # Only pass warm-start networks when given, so cold starts work with older CleanRL.jl.
+    warm_start = isnothing(initial_actor) && isnothing(initial_critic) ? (;) :
+        (; initial_actor, initial_critic)
+    actor, critic = CleanRL.ppo(
+        _ppo_env_factory(mdp, config),
+        _cleanrl_ppo_config(config);
+        warm_start...,
+    )
     return (; actor, critic, mdp)
 end
 

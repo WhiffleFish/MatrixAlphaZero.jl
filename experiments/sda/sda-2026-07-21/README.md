@@ -203,3 +203,43 @@ julia --project=experiments \
 
 Results are written to `value_vs_regret_head_to_head/matchups.csv`, with the
 seat-balanced calculation in `summary.csv`.
+
+## PPO best responses to the paper solvers
+
+`ppo_best_response.jl` approximates best responses to the three solvers in the
+paper's round-robin table (`zero_oracle` = SM-MCTS-A, `value_oracle` =
+SM-AZ (-RT), `full_solver` = SM-AZ). The solvers are built by `solver_policy`
+with the table's settings:
+
+- 50 queries, depth 5, search epsilon 0.1;
+- regret-only transfer at `prior_scale=2.5`;
+- the refit regret heads in `regret_fit_results_softplus_long/models.jld2`.
+
+For each solver and seat:
+
+1. Behavior-clone the solver's own seat from self-play.
+2. Train PPO from that clone. PPO's discount defaults to the game's.
+3. Score candidates on 200 selection rollouts. The candidates are:
+   - the PPO policy, sampled and greedy;
+   - the clone;
+   - every solver's seat;
+   - the no-burn heuristic.
+4. Report the best candidate on 1000 fresh rollouts, paired with the solver's own
+   seat.
+
+All stages sample initial states from the correlated LEO law. The outputs match
+the Dubins experiment's (`candidates.csv`, `seats.csv`, `summary.csv`).
+
+A single PPO seed per seat is the default:
+
+```sh
+julia -t auto --project=experiments \
+  experiments/sda/sda-2026-07-21/ppo_best_response.jl
+```
+
+Use `--solvers` and `--players` to run a subset of seats, and `--test` for a
+smoke test. Results go to `ppo_best_response_q50_scale2p5/`. Behavior-cloned warm
+starts need a CleanRL.jl that accepts `initial_actor` / `initial_critic`.
+
+The earlier `ppo_solver_response_utilities.jl` run used 100-query solvers at
+`prior_scale=5`, so it does not match the paper's tables.

@@ -41,6 +41,11 @@ export JointPolicy, SinglePlayerAlphaZeroPolicy
 export FunctionPlayerPolicy, StdErrResult
 export evaluate_joint_policy
 
+include("ppo_response_suite.jl")
+export GreedyActorPlayerPolicy, BehaviorCloneConfig
+export mixture_initialstate, behavior_clone_response, seat_rollouts
+export ppo_best_response_seat, run_ppo_best_response_suite, write_rows_csv
+
 include("dubin.jl")
 
 include("tron.jl")
