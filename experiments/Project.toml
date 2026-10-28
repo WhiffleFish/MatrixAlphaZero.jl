@@ -20,8 +20,8 @@ SDAGames = "6b0fb67b-fedb-4176-a74d-55c3ed2630ba"
 [sources]
 CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
 ExperimentTools = {path = "../ExperimentTools"}
-FictitiousPlay = {url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
+FictitiousPlay = {rev = "main", url = "https://github.com/WhiffleFish/FictitiousPlay.jl"}
 MarkovGames = {rev = "main", url = "git@github.com:WhiffleFish/MarkovGames.jl.git"}
 MatrixAlphaZero = {path = ".."}
-POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
-SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}
+POSGModels = {rev = "main", url = "https://github.com/WhiffleFish/POSGModels.jl"}
+SDAGames = {rev = "main", url = "https://github.com/WhiffleFish/SDAGames"}

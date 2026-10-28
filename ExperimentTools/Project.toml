@@ -27,10 +27,10 @@ Wandb = "ad70616a-06c9-5745-b1f1-6a5f42545108"
 
 [sources]
 CleanRL = {rev = "main", url = "https://github.com/WhiffleFish/CleanRL.jl"}
-MarkovGames = {url = "https://github.com/WhiffleFish/MarkovGames.jl"}
+MarkovGames = {rev = "main", url = "https://github.com/WhiffleFish/MarkovGames.jl"}
 MatrixAlphaZero = {path = ".."}
-POSGModels = {url = "https://github.com/WhiffleFish/POSGModels.jl"}
-SDAGames = {url = "https://github.com/WhiffleFish/SDAGames"}
+POSGModels = {rev = "main", url = "https://github.com/WhiffleFish/POSGModels.jl"}
+SDAGames = {rev = "main", url = "https://github.com/WhiffleFish/SDAGames"}
 
 [compat]
 ArgParse = "1.2.0"
