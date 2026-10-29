@@ -1,0 +1,64 @@
+[sda-ppo-br] checkpoint=/Users/whiffle/code/MatrixAlphaZero.jl/experiments/sda/sda-2026-07-21/models_rm_plus_no_transfer_train_mean_leo/oracle1221.jld2 threads=18 search=(queries = 50, max_depth = 5, search_epsilon = 0.1, prior_scale = 2.5) output=/Users/whiffle/code/MatrixAlphaZero.jl/experiments/sda/sda-2026-07-21/ppo_best_response_q50_scale2p5_bc1000_5M
+[ppo-br] zero_oracle p1 behavior clone: samples=30345 kl=0.111 value_mse=164.6729
+[ppo-br] training response_p1__vs_zero_oracle_p2__bc
+[ppo-br] zero_oracle p1 select bc_init: 12.0907 ± 1.4101
+[ppo-br] zero_oracle p1 select ppo_bc: 29.0957 ± 1.4622
+[ppo-br] zero_oracle p1 select ppo_bc_greedy: 29.7867 ± 1.4348
+[ppo-br] zero_oracle p1 select solver_zero_oracle: 15.3882 ± 1.3633
+[ppo-br] zero_oracle p1 select solver_value_oracle: 11.1395 ± 1.233
+[ppo-br] zero_oracle p1 select solver_full_solver: 14.1366 ± 1.3045
+[ppo-br] zero_oracle p1 select heuristic_no_burn: 20.2638 ± 1.3539
+[ppo-br] zero_oracle p1 selected ppo_bc_greedy: response=28.7038 self=14.0453 gain=14.6585 ± 0.7031
+[ppo-br] zero_oracle p2 behavior clone: samples=30023 kl=0.0332 value_mse=169.6827
+[ppo-br] training response_p2__vs_zero_oracle_p1__bc
+[ppo-br] zero_oracle p2 select bc_init: -17.5595 ± 1.435
+[ppo-br] zero_oracle p2 select ppo_bc: -5.8571 ± 0.7352
+[ppo-br] zero_oracle p2 select ppo_bc_greedy: -5.3239 ± 0.7068
+[ppo-br] zero_oracle p2 select solver_zero_oracle: -16.2335 ± 1.3145
+[ppo-br] zero_oracle p2 select solver_value_oracle: -10.9032 ± 0.8758
+[ppo-br] zero_oracle p2 select solver_full_solver: -8.6522 ± 0.9
+[ppo-br] zero_oracle p2 select heuristic_no_burn: -15.0222 ± 1.4286
+[ppo-br] zero_oracle p2 selected ppo_bc_greedy: response=-4.428 self=-14.0699 gain=9.6419 ± 0.5089
+[ppo-br] value_oracle p1 behavior clone: samples=25266 kl=0.2645 value_mse=105.6162
+[ppo-br] training response_p1__vs_value_oracle_p2__bc
+[ppo-br] value_oracle p1 select bc_init: 3.8879 ± 0.9556
+[ppo-br] value_oracle p1 select ppo_bc: 19.724 ± 1.1388
+[ppo-br] value_oracle p1 select ppo_bc_greedy: 20.2148 ± 1.0333
+[ppo-br] value_oracle p1 select solver_zero_oracle: 10.1807 ± 0.9266
+[ppo-br] value_oracle p1 select solver_value_oracle: 7.1035 ± 1.022
+[ppo-br] value_oracle p1 select solver_full_solver: 10.295 ± 1.0726
+[ppo-br] value_oracle p1 select heuristic_no_burn: 14.5355 ± 0.8595
+[ppo-br] value_oracle p1 selected ppo_bc_greedy: response=20.298 self=7.3112 gain=12.9869 ± 0.5405
+[ppo-br] value_oracle p2 behavior clone: samples=24196 kl=0.196 value_mse=115.5772
+[ppo-br] training response_p2__vs_value_oracle_p1__bc
+[ppo-br] value_oracle p2 select bc_init: -11.7909 ± 1.145
+[ppo-br] value_oracle p2 select ppo_bc: -2.9606 ± 0.7639
+[ppo-br] value_oracle p2 select ppo_bc_greedy: -3.2096 ± 0.834
+[ppo-br] value_oracle p2 select solver_zero_oracle: -15.3002 ± 1.3714
+[ppo-br] value_oracle p2 select solver_value_oracle: -9.4511 ± 1.0534
+[ppo-br] value_oracle p2 select solver_full_solver: -8.3672 ± 0.9872
+[ppo-br] value_oracle p2 select heuristic_no_burn: -13.9839 ± 1.471
+[ppo-br] value_oracle p2 selected ppo_bc: response=-2.2792 self=-7.7598 gain=5.4806 ± 0.4076
+[ppo-br] full_solver p1 behavior clone: samples=25789 kl=0.2809 value_mse=104.3498
+[ppo-br] training response_p1__vs_full_solver_p2__bc
+[ppo-br] full_solver p1 select bc_init: 4.9861 ± 0.9814
+[ppo-br] full_solver p1 select ppo_bc: 19.5054 ± 1.0501
+[ppo-br] full_solver p1 select ppo_bc_greedy: 20.3086 ± 1.0203
+[ppo-br] full_solver p1 select solver_zero_oracle: 9.2162 ± 0.8936
+[ppo-br] full_solver p1 select solver_value_oracle: 7.0152 ± 0.9464
+[ppo-br] full_solver p1 select solver_full_solver: 8.7926 ± 0.987
+[ppo-br] full_solver p1 select heuristic_no_burn: 13.2356 ± 0.765
+[ppo-br] full_solver p1 selected ppo_bc_greedy: response=19.7449 self=8.29 gain=11.4549 ± 0.5485
+[ppo-br] full_solver p2 behavior clone: samples=26092 kl=0.2044 value_mse=107.8622
+[ppo-br] training response_p2__vs_full_solver_p1__bc
+[ppo-br] full_solver p2 select bc_init: -12.5741 ± 1.1328
+[ppo-br] full_solver p2 select ppo_bc: -4.5893 ± 0.8224
+[ppo-br] full_solver p2 select ppo_bc_greedy: -4.5831 ± 0.8514
+[ppo-br] full_solver p2 select solver_zero_oracle: -16.5601 ± 1.4587
+[ppo-br] full_solver p2 select solver_value_oracle: -8.6964 ± 0.9229
+[ppo-br] full_solver p2 select solver_full_solver: -10.0933 ± 1.0078
+[ppo-br] full_solver p2 select heuristic_no_burn: -16.2525 ± 1.4638
+[ppo-br] full_solver p2 selected ppo_bc_greedy: response=-2.244 self=-8.57 gain=6.326 ± 0.3883
+  Activating project at `~/code/MatrixAlphaZero.jl/experiments`
+  Activating project at `~/code/MatrixAlphaZero.jl/experiments`
+  Activating project at `~/code/MatrixAlphaZero.jl/experiments`
