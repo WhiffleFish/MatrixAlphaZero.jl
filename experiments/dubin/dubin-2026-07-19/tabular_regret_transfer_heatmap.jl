@@ -421,8 +421,13 @@ function run_node_search(
         node::Int,
         seed::Int;
         transfer::Bool,
+        iterations::Int=cfg["iterations"],
+        # prior_scale = wT1; the default w=1, T1=T2 is the paper's Figure 2.
+        prior_scale::Float64=Float64(cfg["iterations"]),
+        regret_weight::Float64=1.0,
+        strategy_weight::Float64=1.0,
+        statistic_weight::Float64=1.0,
     )
-    iterations = cfg["iterations"]
     remaining_depth = tree.game.horizon - tree.depths[node]
     remaining_depth > 0 || error("Cannot search finite-tree leaf node $(node)")
     search = AZ.MCTSSearch(;
@@ -433,11 +438,15 @@ function run_node_search(
         max_depth=remaining_depth,
         search_style=AZ.RegretMatchingSearch(; backup=:sample, method=AZ.Plus()),
         ϵ=_ -> cfg["epsilon"],
-        prior_scale=transfer ? Float64(iterations) : 0.0,
+        prior_scale=transfer ? prior_scale : 0.0,
+        regret_prior_weight=regret_weight,
+        strategy_prior_weight=strategy_weight,
+        statistic_prior_weight=statistic_weight,
     )
     Random.seed!(seed)
     (_, _, _), info = AZ.search_info(search, tree.game, tree.states[node]; ϵ=cfg["epsilon"])
-    prior_updates = transfer ? iterations : 0
+    # Transferred pseudo-counts occupy the root visit statistics.
+    prior_updates = transfer ? prior_scale * statistic_weight : 0.0
     updates = sum(info.tree.n_sa[1]) - prior_updates
     isapprox(updates, iterations; atol=1e-8, rtol=0.0) ||
         error("Expected $(iterations) root updates, observed $(updates)")
@@ -451,6 +460,8 @@ function solve_all_nodes(
         seed::Int;
         transfer::Bool,
         extract_source::Bool=false,
+        iterations::Int=cfg["iterations"],
+        search_kwargs...,
     )
     na = Tuple(length.(actions(tree.game)))
     policy1 = [fill(inv(na[1]), na[1]) for _ in tree.states]
@@ -458,11 +469,10 @@ function solve_all_nodes(
     average_regret = [(zeros(na[1]), zeros(na[2])) for _ in tree.states]
     average_strategy = [(copy(policy1[i]), copy(policy2[i])) for i in eachindex(tree.states)]
     nodes = findall(i -> !isempty(tree.children[i]), eachindex(tree.states))
-    iterations = cfg["iterations"]
     @threads for k in eachindex(nodes)
         node = nodes[k]
         search_tree = run_node_search(
-            tree, oracle, cfg, node, seed + 104729node; transfer,
+            tree, oracle, cfg, node, seed + 104729node; transfer, iterations, search_kwargs...,
         )
         policy1[node] = AZ.normalized_or_uniform(search_tree.policy_sum[1][1])
         policy2[node] = AZ.normalized_or_uniform(search_tree.policy_sum[2][1])
